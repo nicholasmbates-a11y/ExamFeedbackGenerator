@@ -84,6 +84,29 @@
             <button id="apply-calculated-grades" type="button" class="primary-action">Apply grades</button>
           </div>
           <div id="grade-boundary-grid" class="grade-boundary-grid"></div>
+          <div id="grade-distribution-summary" class="grade-distribution-summary"></div>
+          <div class="table-wrap compact-wrap">
+            <table class="analysis-table grade-preview-table">
+              <thead>
+                <tr>
+                  <th>Grade</th>
+                  <th>Boundary</th>
+                  <th>Pupils</th>
+                  <th>Suggested cut-point</th>
+                </tr>
+              </thead>
+              <tbody id="grade-preview-rows"></tbody>
+            </table>
+          </div>
+          <div class="report-options">
+            <h3>Report pack options</h3>
+            <label><input id="report-include-grade" type="checkbox" checked> Grade</label>
+            <label><input id="report-include-topic-table" type="checkbox" checked> Topic table</label>
+            <label><input id="report-include-diagnostics" type="checkbox" checked> Diagnostics</label>
+            <label><input id="report-include-cohort-average" type="checkbox" checked> Cohort average comparison</label>
+            <label><input id="report-include-teacher" type="checkbox" checked> Teacher</label>
+            <label><input id="report-include-date" type="checkbox" checked> Generated date</label>
+          </div>
         </section>
 
         <section class="panel controls-panel" aria-labelledby="templates-title">

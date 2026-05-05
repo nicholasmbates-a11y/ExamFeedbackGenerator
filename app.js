@@ -120,8 +120,16 @@ const feedbackLengthEl = document.querySelector("#feedback-length");
 const feedbackToneEl = document.querySelector("#feedback-tone");
 const gradeScaleEl = document.querySelector("#grade-scale");
 const gradeBoundaryGridEl = document.querySelector("#grade-boundary-grid");
+const gradeDistributionSummaryEl = document.querySelector("#grade-distribution-summary");
+const gradePreviewRowsEl = document.querySelector("#grade-preview-rows");
 const suggestGradeBoundariesButton = document.querySelector("#suggest-grade-boundaries");
 const applyCalculatedGradesButton = document.querySelector("#apply-calculated-grades");
+const reportIncludeGradeEl = document.querySelector("#report-include-grade");
+const reportIncludeTopicTableEl = document.querySelector("#report-include-topic-table");
+const reportIncludeDiagnosticsEl = document.querySelector("#report-include-diagnostics");
+const reportIncludeCohortAverageEl = document.querySelector("#report-include-cohort-average");
+const reportIncludeTeacherEl = document.querySelector("#report-include-teacher");
+const reportIncludeDateEl = document.querySelector("#report-include-date");
 const validationListEl = document.querySelector("#validation-list");
 const feedbackOutputEl = document.querySelector("#feedback-output");
 const toggleFeedbackButton = document.querySelector("#toggle-feedback");
@@ -438,24 +446,88 @@ function completedPercentages() {
     .filter((percentage) => percentage !== null);
 }
 
-function suggestGradeBoundaries() {
+function getDistributionStats() {
   const percentages = completedPercentages();
-  if (percentages.length < 3) {
+  const mean = average(percentages);
+  if (mean === null) {
+    return {
+      percentages,
+      mean: null,
+      standardDeviation: null,
+      suggestedStandardDeviation: null,
+    };
+  }
+  const variance = percentages.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / percentages.length;
+  const standardDeviation = Math.sqrt(variance);
+  return {
+    percentages,
+    mean,
+    standardDeviation,
+    suggestedStandardDeviation: Math.max(standardDeviation, 8),
+  };
+}
+
+function suggestedBoundaryForGrade(grade, stats = getDistributionStats()) {
+  if (stats.mean === null || stats.percentages.length < 3) return null;
+  const scale = getActiveGradeScale();
+  return Math.min(Math.max(Math.round(stats.mean + (stats.suggestedStandardDeviation * scale.zScores[grade])), 0), 100);
+}
+
+function renderGradePreview() {
+  const scale = getActiveGradeScale();
+  const settings = getGradeSettings();
+  const stats = getDistributionStats();
+  const counts = Object.fromEntries([...scale.grades, "U"].map((grade) => [grade, 0]));
+
+  pupils.forEach((pupil) => {
+    const percentage = analysePupil(pupil).overallPercentage;
+    if (percentage === null) return;
+    const grade = gradeForPercentage(percentage) || "U";
+    counts[grade] = (counts[grade] || 0) + 1;
+  });
+
+  gradeDistributionSummaryEl.innerHTML = `
+    <div class="grade-stat"><span>Marked pupils</span><strong>${stats.percentages.length}/${pupils.length}</strong></div>
+    <div class="grade-stat"><span>Mean</span><strong>${stats.mean === null ? "-" : `${stats.mean}%`}</strong></div>
+    <div class="grade-stat"><span>Std deviation</span><strong>${stats.standardDeviation === null ? "-" : `${Math.round(stats.standardDeviation)}%`}</strong></div>
+    <div class="grade-stat"><span>Suggestion spread</span><strong>${stats.suggestedStandardDeviation === null ? "-" : `${Math.round(stats.suggestedStandardDeviation)}%`}</strong></div>
+  `;
+
+  gradePreviewRowsEl.innerHTML = scale.grades.map((grade) => {
+    const suggested = suggestedBoundaryForGrade(grade, stats);
+    return `
+      <tr>
+        <td>${escapeHtml(grade)}</td>
+        <td>${settings.boundaries[grade]}%</td>
+        <td>${counts[grade] || 0}</td>
+        <td>${suggested === null ? "Need 3+ marked pupils" : `${suggested}%`}</td>
+      </tr>
+    `;
+  }).join("") + `
+    <tr>
+      <td>U</td>
+      <td>Below ${Math.min(...Object.values(settings.boundaries))}%</td>
+      <td>${counts.U || 0}</td>
+      <td>-</td>
+    </tr>
+  `;
+}
+
+function suggestGradeBoundaries() {
+  const stats = getDistributionStats();
+  if (stats.percentages.length < 3) {
     setSaveStatus("Enter marks for at least 3 pupils before suggesting grade boundaries.");
     return;
   }
 
-  const mean = average(percentages);
-  const variance = percentages.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / percentages.length;
-  const standardDeviation = Math.max(Math.sqrt(variance), 8);
   const scale = getActiveGradeScale();
   scale.grades.forEach((grade) => {
     const input = getGradeBoundaryInput(grade);
     if (!input) return;
-    input.value = Math.min(Math.max(Math.round(mean + (standardDeviation * scale.zScores[grade])), 0), 100);
+    input.value = suggestedBoundaryForGrade(grade, stats);
   });
   updatePupilOutputs();
-  setSaveStatus(`Suggested ${scale.label} boundaries from the cohort average (${mean}%) and spread.`);
+  setSaveStatus(`Suggested ${scale.label} boundaries using mean ${stats.mean}% and standard deviation ${Math.round(stats.standardDeviation)}%.`);
 }
 
 function applyCalculatedGrades() {
@@ -469,6 +541,26 @@ function applyCalculatedGrades() {
   });
   rerenderAll();
   setSaveStatus(`Applied calculated ${getActiveGradeScale().label} grades to ${pupils.length} pupils.`);
+}
+
+function getReportOptions() {
+  return {
+    grade: reportIncludeGradeEl.checked,
+    topicTable: reportIncludeTopicTableEl.checked,
+    diagnostics: reportIncludeDiagnosticsEl.checked,
+    cohortAverage: reportIncludeCohortAverageEl.checked,
+    teacher: reportIncludeTeacherEl.checked,
+    date: reportIncludeDateEl.checked,
+  };
+}
+
+function applyReportOptions(options = {}) {
+  if (options.grade !== undefined) reportIncludeGradeEl.checked = Boolean(options.grade);
+  if (options.topicTable !== undefined) reportIncludeTopicTableEl.checked = Boolean(options.topicTable);
+  if (options.diagnostics !== undefined) reportIncludeDiagnosticsEl.checked = Boolean(options.diagnostics);
+  if (options.cohortAverage !== undefined) reportIncludeCohortAverageEl.checked = Boolean(options.cohortAverage);
+  if (options.teacher !== undefined) reportIncludeTeacherEl.checked = Boolean(options.teacher);
+  if (options.date !== undefined) reportIncludeDateEl.checked = Boolean(options.date);
 }
 
 function toneForOverall(percentage) {
@@ -509,6 +601,17 @@ function toneForOverall(percentage) {
     targetVerb: "should prioritise revising",
     fallbackWin: "You kept working through the paper, and this gives you a useful starting point for focused revision.",
   };
+}
+
+function gradeFeedbackNudge(analysis) {
+  const grade = analysis.calculatedGrade;
+  if (!grade) return "";
+  const scale = getActiveGradeScale();
+  const rank = scale.grades.indexOf(grade);
+  if (rank === -1) return "Your immediate priority is to secure the highest-frequency core ideas before moving on to longer exam questions.";
+  if (rank <= 1) return "At this grade, improvement is likely to come from precision: selecting the most efficient method, using exact terminology, and avoiding small avoidable errors.";
+  if (rank <= Math.floor(scale.grades.length / 2)) return "To move up the grade scale, focus on turning partial methods into complete answers and linking explanations clearly to the Physics model.";
+  return "The next grade step will come from rebuilding the core knowledge first, then practising short, well-marked questions until the method feels secure.";
 }
 
 function analysePupil(pupil) {
@@ -572,6 +675,7 @@ function buildFeedbackText(pupil) {
     .slice(0, 3)
     .map((question) => `For ${question.topic}, the main issue was ${diagnosticPhrase(question.diagnostics)}.`)
     .join(" ");
+  const gradeNudge = gradeFeedbackNudge(analysis);
 
   if (analysis.marked.length === 0) {
     return {
@@ -586,16 +690,16 @@ function buildFeedbackText(pupil) {
     : `${analysis.tone.opener} ${analysis.tone.fallbackWin}`;
 
   let evenBetterIf = targetTopics.length > 0
-    ? `${toneSetting.targetLead}, you ${analysis.tone.targetVerb} ${formatTopicList(targetTopicNames)}. ${targetDetails} ${diagnosticDetails} You could revisit the key equations, practise explaining the underlying physics in words, and complete exam-style questions with careful attention to command words and units.`
-    : `${toneSetting.targetLead}, ${toneSetting.precision} ${diagnosticDetails}`;
+    ? `${toneSetting.targetLead}, you ${analysis.tone.targetVerb} ${formatTopicList(targetTopicNames)}. ${targetDetails} ${diagnosticDetails} You could revisit the key equations, practise explaining the underlying physics in words, and complete exam-style questions with careful attention to command words and units. ${gradeNudge}`
+    : `${toneSetting.targetLead}, ${toneSetting.precision} ${diagnosticDetails} ${gradeNudge}`;
 
   if (settings.length === "short") {
     whatWentWell = secureTopics.length > 0
       ? `You showed strength in ${formatTopicList(secureTopicNames)}.`
       : analysis.tone.fallbackWin;
     evenBetterIf = targetTopics.length > 0
-      ? `You could improve by focusing revision on ${formatTopicList(targetTopicNames)}. ${diagnosticDetails}`
-      : toneSetting.precision;
+      ? `You could improve by focusing revision on ${formatTopicList(targetTopicNames)}. ${diagnosticDetails} ${gradeNudge}`
+      : `${toneSetting.precision} ${gradeNudge}`;
   }
 
   if (settings.length === "detailed") {
@@ -1015,6 +1119,7 @@ function updatePupilOutputs() {
     });
   });
 
+  renderGradePreview();
   renderCohortAnalysis();
   renderSelectedFeedback();
   renderDiagnostics();
@@ -1026,6 +1131,7 @@ function rerenderAll() {
   renderTopicRows();
   renderPupilHead();
   renderPupilRows();
+  renderGradePreview();
   renderCohortAnalysis();
   renderSelectedFeedback();
   renderDiagnostics();
@@ -1244,6 +1350,17 @@ gradeBoundaryGridEl.addEventListener("change", updatePupilOutputs);
 suggestGradeBoundariesButton.addEventListener("click", suggestGradeBoundaries);
 applyCalculatedGradesButton.addEventListener("click", applyCalculatedGrades);
 
+[
+  reportIncludeGradeEl,
+  reportIncludeTopicTableEl,
+  reportIncludeDiagnosticsEl,
+  reportIncludeCohortAverageEl,
+  reportIncludeTeacherEl,
+  reportIncludeDateEl,
+].forEach((input) => {
+  input.addEventListener("change", scheduleAutosave);
+});
+
 resetButton.addEventListener("click", () => {
   pushUndo();
   questions = cloneQuestions();
@@ -1360,6 +1477,7 @@ function getTemplateState() {
       average: averageThresholdEl.value,
     },
     grading: getGradeSettings(),
+    reportOptions: getReportOptions(),
     feedback: getFeedbackSettings(),
   };
 }
@@ -1372,6 +1490,7 @@ function applyTemplateState(template) {
   if (template.thresholds?.good) goodThresholdEl.value = template.thresholds.good;
   if (template.thresholds?.average) averageThresholdEl.value = template.thresholds.average;
   applyGradeSettings(template.grading);
+  applyReportOptions(template.reportOptions);
   if (template.feedback?.length) feedbackLengthEl.value = template.feedback.length;
   if (template.feedback?.tone) feedbackToneEl.value = template.feedback.tone;
   rerenderAll();
@@ -1388,6 +1507,7 @@ function getAppState() {
       average: averageThresholdEl.value,
     },
     grading: getGradeSettings(),
+    reportOptions: getReportOptions(),
     feedback: getFeedbackSettings(),
   };
 }
@@ -1407,6 +1527,7 @@ function applyAppState(state) {
   if (state.thresholds?.good) goodThresholdEl.value = state.thresholds.good;
   if (state.thresholds?.average) averageThresholdEl.value = state.thresholds.average;
   applyGradeSettings(state.grading);
+  applyReportOptions(state.reportOptions);
   if (state.feedback?.length) feedbackLengthEl.value = state.feedback.length;
   if (state.feedback?.tone) feedbackToneEl.value = state.feedback.tone;
 
@@ -1456,34 +1577,48 @@ function openPrintableDocument(title, bodyHtml) {
 function printReportPack(reportPupils = pupils, titleSuffix = "") {
   if (!Array.isArray(reportPupils)) reportPupils = pupils;
   const title = saveNameInput.value.trim() || "Physics feedback reports";
+  const options = getReportOptions();
+  const topicStats = getTopicStats();
   const body = `
     <h1>${escapeHtml(`${title}${titleSuffix}`)}</h1>
-    <p class="meta">Generated ${new Date().toLocaleString()}</p>
+    ${options.date ? `<p class="meta">Generated ${new Date().toLocaleString()}</p>` : ""}
     ${reportPupils.map((pupil) => {
       const feedback = buildFeedbackText(pupil);
       const analysis = feedback.analysis;
+      const cohortAverageCell = (question) => {
+        const topicAverage = topicStats[question.index]?.average;
+        return topicAverage === null || topicAverage === undefined ? "-" : `${topicAverage}%`;
+      };
+      const metaParts = [
+        `Class: ${escapeHtml(pupil.classGroup || "-")}`,
+        options.teacher ? `Teacher: ${escapeHtml(pupil.teacher || "-")}` : "",
+        options.grade ? `Grade: ${escapeHtml(pupil.grade || analysis.calculatedGrade || "-")}` : "",
+        `Overall: ${analysis.overallPercentage === null ? "No marks yet" : `${analysis.overallPercentage}%`}`,
+        escapeHtml(analysis.tone.label),
+      ].filter(Boolean);
       const breakdownRows = analysis.marked.map((question) => `
         <tr>
           <td>Q${question.number}</td>
           <td>${escapeHtml(question.topic)}</td>
           <td>${question.percentage}%</td>
           <td>${question.band}</td>
-          <td>${question.diagnostics.map((item) => diagnosticOptions[item]).join(", ") || "-"}</td>
+          ${options.cohortAverage ? `<td>${cohortAverageCell(question)}</td>` : ""}
+          ${options.diagnostics ? `<td>${question.diagnostics.map((item) => diagnosticOptions[item]).join(", ") || "-"}</td>` : ""}
         </tr>
       `).join("");
 
       return `
         <section class="pupil-report">
           <h2>${escapeHtml(pupil.name)}</h2>
-          <p class="meta">Class: ${escapeHtml(pupil.classGroup || "-")} · Teacher: ${escapeHtml(pupil.teacher || "-")} · Grade: ${escapeHtml(pupil.grade || analysis.calculatedGrade || "-")} · Overall: ${analysis.overallPercentage === null ? "No marks yet" : `${analysis.overallPercentage}%`} · ${escapeHtml(analysis.tone.label)}</p>
+          <p class="meta">${metaParts.join(" · ")}</p>
           <h3>What went well</h3>
           <p>${escapeHtml(feedback.whatWentWell)}</p>
           <h3>Even better if</h3>
           <p>${escapeHtml(feedback.evenBetterIf)}</p>
-          <table>
-            <thead><tr><th>Question</th><th>Topic</th><th>%</th><th>Band</th><th>Diagnostics</th></tr></thead>
-            <tbody>${breakdownRows || '<tr><td colspan="5">No marks entered.</td></tr>'}</tbody>
-          </table>
+          ${options.topicTable ? `<table>
+            <thead><tr><th>Question</th><th>Topic</th><th>%</th><th>Band</th>${options.cohortAverage ? "<th>Cohort avg</th>" : ""}${options.diagnostics ? "<th>Diagnostics</th>" : ""}</tr></thead>
+            <tbody>${breakdownRows || `<tr><td colspan="${4 + (options.cohortAverage ? 1 : 0) + (options.diagnostics ? 1 : 0)}">No marks entered.</td></tr>`}</tbody>
+          </table>` : ""}
         </section>
       `;
     }).join("")}

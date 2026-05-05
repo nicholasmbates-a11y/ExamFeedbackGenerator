@@ -183,6 +183,65 @@ textarea {
   color: var(--ink);
 }
 
+.grade-distribution-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.grade-stat {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fbfc;
+}
+
+.grade-stat span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.grade-stat strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 1.25rem;
+}
+
+.grade-preview-table {
+  min-width: 620px;
+}
+
+.report-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.report-options h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.report-options label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.report-options input {
+  width: 18px;
+  height: 18px;
+}
+
 .threshold-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(130px, 1fr));
@@ -771,7 +830,9 @@ td:first-child,
   .cohort-tools,
   .wizard-grid,
   .grading-controls,
-  .grade-boundary-grid {
+  .grade-boundary-grid,
+  .grade-distribution-summary,
+  .report-options {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -855,6 +916,8 @@ td:first-child,
   .wizard-grid,
   .grading-controls,
   .grade-boundary-grid,
+  .grade-distribution-summary,
+  .report-options,
   .import-steps {
     grid-template-columns: 1fr;
   }
