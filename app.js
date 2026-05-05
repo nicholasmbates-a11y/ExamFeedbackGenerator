@@ -1318,6 +1318,7 @@ function openPrintableDocument(title, bodyHtml) {
 }
 
 function printReportPack(reportPupils = pupils, titleSuffix = "") {
+  if (!Array.isArray(reportPupils)) reportPupils = pupils;
   const title = saveNameInput.value.trim() || "Physics feedback reports";
   const body = `
     <h1>${escapeHtml(`${title}${titleSuffix}`)}</h1>
@@ -2112,7 +2113,9 @@ exportCsvButton.addEventListener("click", () => {
   setSaveStatus("CSV exported.");
 });
 
-printReportsButton.addEventListener("click", printReportPack);
+printReportsButton.addEventListener("click", () => {
+  printReportPack();
+});
 
 exportSummaryButton.addEventListener("click", exportDepartmentSummary);
 
