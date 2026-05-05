@@ -22,6 +22,8 @@
 html,
 body {
   height: 100%;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -43,6 +45,8 @@ textarea {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
   gap: 12px;
+  width: 100vw;
+  max-width: 100vw;
   height: 100vh;
   min-height: 0;
   overflow: hidden;
@@ -58,8 +62,10 @@ textarea {
   display: grid;
   align-content: start;
   gap: 12px;
+  min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 2px;
 }
 
@@ -70,6 +76,12 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  min-width: 0;
+}
+
+.topbar,
+.section-heading {
+  flex-wrap: wrap;
 }
 
 .action-row {
@@ -77,6 +89,8 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .action-row .save-name,
@@ -107,6 +121,7 @@ textarea {
 
 .panel,
 .feedback-panel {
+  min-width: 0;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -127,6 +142,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 18px;
 }
 
@@ -218,7 +234,10 @@ button {
 }
 
 .table-wrap {
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   margin-top: 12px;
 }
 
@@ -605,9 +624,10 @@ td:first-child,
   color: var(--danger);
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1240px) {
   body {
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .app-shell {
@@ -623,6 +643,38 @@ td:first-child,
 
   .workspace {
     overflow: visible;
+    min-width: 0;
+  }
+
+  .controls-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .template-controls,
+  .mapping-grid,
+  .cohort-tools {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cohort-tools {
+    align-items: stretch;
+  }
+
+  .action-row {
+    justify-content: flex-start;
+  }
+
+  table {
+    min-width: 960px;
+  }
+
+  .cohort-table {
+    min-width: 1040px;
+  }
+
+  .analysis-table {
+    min-width: 680px;
   }
 
   .feedback-panel {
@@ -664,7 +716,7 @@ td:first-child,
 
 @media (max-width: 680px) {
   .app-shell {
-    padding: 14px;
+    padding: 8px;
   }
 
   .topbar,
@@ -700,5 +752,17 @@ td:first-child,
 
   .summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  table {
+    min-width: 820px;
+  }
+
+  .cohort-table {
+    min-width: 920px;
+  }
+
+  .analysis-table {
+    min-width: 620px;
   }
 }
