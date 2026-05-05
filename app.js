@@ -93,6 +93,8 @@ let lastImportIssues = [];
 const topicRowsEl = document.querySelector("#topic-rows");
 const pupilRowsEl = document.querySelector("#pupil-rows");
 const pupilScoreHeadEl = document.querySelector("#pupil-score-head");
+const appShellEl = document.querySelector(".app-shell");
+const feedbackPanelEl = document.querySelector(".feedback-panel");
 const cohortSummaryEl = document.querySelector("#cohort-summary");
 const topicAverageRowsEl = document.querySelector("#topic-average-rows");
 const interventionRowsEl = document.querySelector("#intervention-rows");
@@ -104,6 +106,7 @@ const feedbackLengthEl = document.querySelector("#feedback-length");
 const feedbackToneEl = document.querySelector("#feedback-tone");
 const validationListEl = document.querySelector("#validation-list");
 const feedbackOutputEl = document.querySelector("#feedback-output");
+const toggleFeedbackButton = document.querySelector("#toggle-feedback");
 const overallScoreEl = document.querySelector("#overall-score");
 const overallBandEl = document.querySelector("#overall-band");
 const selectedPupilNameEl = document.querySelector("#selected-pupil-name");
@@ -1891,6 +1894,13 @@ ${feedback.whatWentWell}
 Even better if
 ${feedback.evenBetterIf}`;
 }
+
+toggleFeedbackButton.addEventListener("click", () => {
+  const isCollapsed = feedbackPanelEl.classList.toggle("collapsed");
+  appShellEl.classList.toggle("feedback-collapsed", isCollapsed);
+  toggleFeedbackButton.textContent = isCollapsed ? "Show" : "Hide";
+  toggleFeedbackButton.setAttribute("aria-expanded", String(!isCollapsed));
+});
 
 copyButton.addEventListener("click", () => {
   const pupil = pupils.find((item) => item.id === selectedPupilId);

@@ -19,9 +19,15 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
+  overflow: hidden;
   background: var(--page);
   color: var(--ink);
 }
@@ -35,16 +41,26 @@ textarea {
 
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
-  gap: 24px;
-  min-height: 100vh;
-  padding: 24px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: 12px;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px;
+  transition: grid-template-columns 0.18s ease;
+}
+
+.app-shell.feedback-collapsed {
+  grid-template-columns: minmax(0, 1fr) 78px;
 }
 
 .workspace {
   display: grid;
   align-content: start;
-  gap: 18px;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .topbar,
@@ -59,7 +75,7 @@ textarea {
 .action-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   justify-content: flex-end;
 }
 
@@ -77,7 +93,7 @@ textarea {
 
 .topbar h1 {
   max-width: 780px;
-  font-size: clamp(2rem, 4vw, 4.5rem);
+  font-size: clamp(1.5rem, 2.4vw, 2.7rem);
 }
 
 .eyebrow {
@@ -98,12 +114,13 @@ textarea {
 }
 
 .panel {
-  padding: 18px;
+  padding: 14px;
 }
 
 .panel p {
   margin: 6px 0 0;
   color: var(--muted);
+  font-size: 0.94rem;
 }
 
 .controls-panel {
@@ -154,7 +171,7 @@ textarea {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   color: var(--ink);
   background: #fff;
 }
@@ -172,11 +189,16 @@ input[type="number"] {
 }
 
 button {
-  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 0 14px;
+  padding: 0 12px;
   font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -197,7 +219,7 @@ button {
 
 .table-wrap {
   overflow-x: auto;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 table {
@@ -410,13 +432,51 @@ td:first-child,
 
 .feedback-panel {
   position: sticky;
-  top: 24px;
+  top: 12px;
   align-self: start;
   display: grid;
-  gap: 18px;
-  max-height: calc(100vh - 48px);
+  gap: 14px;
+  height: calc(100vh - 24px);
+  max-height: calc(100vh - 24px);
   overflow: auto;
-  padding: 20px;
+  padding: 14px;
+  transition: padding 0.18s ease;
+}
+
+.feedback-panel.collapsed {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 20;
+  width: 78px;
+  height: 44px;
+  max-height: 44px;
+  overflow: visible;
+  padding: 0;
+}
+
+.feedback-panel.collapsed .feedback-header {
+  align-items: stretch;
+  flex-direction: column;
+  height: 100%;
+}
+
+.feedback-panel.collapsed .feedback-header > div:first-child,
+.feedback-panel.collapsed .score-summary,
+.feedback-panel.collapsed .feedback-output,
+.feedback-panel.collapsed .diagnostics-panel {
+  display: none;
+}
+
+.feedback-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.feedback-panel.collapsed .feedback-actions {
+  height: 100%;
+  width: 100%;
 }
 
 .score-summary {
@@ -436,11 +496,25 @@ td:first-child,
   font-weight: 800;
 }
 
+.feedback-toggle {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.feedback-panel.collapsed .feedback-toggle {
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 7px;
+}
+
 .feedback-output {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   color: #26313d;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
 .feedback-output h3 {
@@ -532,13 +606,55 @@ td:first-child,
 }
 
 @media (max-width: 980px) {
+  body {
+    overflow: auto;
+  }
+
   .app-shell {
+    height: auto;
     grid-template-columns: 1fr;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .app-shell.feedback-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace {
+    overflow: visible;
   }
 
   .feedback-panel {
     position: static;
+    height: auto;
     max-height: none;
+  }
+
+  .feedback-panel.collapsed {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    bottom: auto;
+    height: 44px;
+    max-height: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  .feedback-panel.collapsed .feedback-header,
+  .feedback-panel.collapsed .feedback-actions {
+    display: flex;
+    height: 100%;
+    width: 100%;
+  }
+
+  .feedback-panel.collapsed .feedback-toggle {
+    display: block;
+    height: 100%;
+    min-height: 0;
+    border: 0;
+    border-radius: 7px;
   }
 
   .summary-grid {
