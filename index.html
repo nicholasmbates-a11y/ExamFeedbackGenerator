@@ -91,6 +91,33 @@
           <div id="csv-mapping-fields" class="mapping-grid"></div>
         </section>
 
+        <section id="excel-preview-panel" class="panel mapping-panel hidden" aria-labelledby="excel-preview-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="excel-preview-title">Excel Import Preview</h2>
+              <p>Choose a sheet, check the columns, then apply the import.</p>
+            </div>
+            <div class="action-row">
+              <select id="excel-sheet-select" aria-label="Excel sheet"></select>
+              <button id="apply-excel-import" type="button" class="primary-action">Apply Excel import</button>
+            </div>
+          </div>
+          <div id="excel-preview-summary" class="summary-grid"></div>
+          <div class="table-wrap compact-wrap">
+            <table class="analysis-table">
+              <thead>
+                <tr>
+                  <th>Column</th>
+                  <th>Header</th>
+                  <th>Decision</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="excel-preview-rows"></tbody>
+            </table>
+          </div>
+        </section>
+
         <section class="panel validation-panel" aria-labelledby="validation-title">
           <div class="section-heading">
             <div>

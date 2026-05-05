@@ -17,7 +17,9 @@ Open `index.html` in a browser, enter the exam topics, then add each pupil's que
 - analyse common diagnostics across the cohort and suggest class responses;
 - customise topic-specific `good`, `average`, and `support` comment banks;
 - import marks from a CSV with headers such as `Pupil,Q1,Q2,Q3`;
-- import department Excel markbooks where row 1 contains question names, row 2 contains max marks, and pupil rows begin below;
+- preview and import department Excel markbooks where row 1 contains question names, row 2 contains max marks, and pupil rows begin below;
+- choose which Excel sheet to import and review which columns will be imported or skipped;
+- import class, teacher, and grade metadata from department markbooks;
 - map CSV columns manually before importing marks;
 - report import and paste issues such as clipped marks or non-numeric values;
 - paste marks directly from a spreadsheet into the cohort table;

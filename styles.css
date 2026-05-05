@@ -245,6 +245,11 @@ td:first-child,
   min-width: 150px;
 }
 
+.meta-input,
+.grade-input {
+  min-width: 96px;
+}
+
 .cohort-table input[type="number"] {
   width: 68px;
 }

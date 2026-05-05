@@ -71,6 +71,9 @@ function createPupil(index) {
   return {
     id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${index}`,
     name: `Pupil ${index}`,
+    classGroup: "",
+    teacher: "",
+    grade: "",
     scores: questions ? questions.map(() => "") : defaultQuestions.map(() => ""),
     diagnostics: questions ? questions.map(() => []) : defaultQuestions.map(() => []),
   };
@@ -81,6 +84,7 @@ let pupils = [createPupil(1), createPupil(2), createPupil(3)];
 let selectedPupilId = pupils[0].id;
 let undoState = null;
 let pendingCsvRows = null;
+let pendingExcelWorkbook = null;
 let autosaveTimer = null;
 let isApplyingState = false;
 let autosaveReady = false;
@@ -135,6 +139,11 @@ const printFilteredReportsButton = document.querySelector("#print-filtered-repor
 const csvMappingPanelEl = document.querySelector("#csv-mapping-panel");
 const csvMappingFieldsEl = document.querySelector("#csv-mapping-fields");
 const applyCsvMappingButton = document.querySelector("#apply-csv-mapping");
+const excelPreviewPanelEl = document.querySelector("#excel-preview-panel");
+const excelSheetSelectEl = document.querySelector("#excel-sheet-select");
+const excelPreviewSummaryEl = document.querySelector("#excel-preview-summary");
+const excelPreviewRowsEl = document.querySelector("#excel-preview-rows");
+const applyExcelImportButton = document.querySelector("#apply-excel-import");
 
 function escapeHtml(value) {
   return String(value)
@@ -176,6 +185,9 @@ function normalisePupil(pupil, index) {
   return {
     id: pupil.id || (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${index}`),
     name: String(pupil.name || `Pupil ${index + 1}`),
+    classGroup: String(pupil.classGroup || ""),
+    teacher: String(pupil.teacher || ""),
+    grade: String(pupil.grade || ""),
     scores,
     diagnostics,
   };
@@ -506,9 +518,12 @@ function renderTopicRows() {
 function renderPupilHead() {
   pupilScoreHeadEl.innerHTML = `
     <th>Pupil</th>
+    <th>Class</th>
+    <th>Teacher</th>
     ${questions.map((question) => `<th>Q${question.number}</th>`).join("")}
     <th>Overall</th>
     <th>Band</th>
+    <th>Grade</th>
     <th>Feedback</th>
     <th>Actions</th>
   `;
@@ -549,9 +564,18 @@ function renderPupilRows() {
         <td>
           <input class="name-input" data-pupil-index="${pupilIndex}" data-pupil-field="name" value="${escapeHtml(pupil.name)}" aria-label="Pupil name">
         </td>
+        <td>
+          <input class="meta-input" data-pupil-index="${pupilIndex}" data-pupil-field="classGroup" value="${escapeHtml(pupil.classGroup)}" aria-label="${escapeHtml(pupil.name)} class">
+        </td>
+        <td>
+          <input class="meta-input" data-pupil-index="${pupilIndex}" data-pupil-field="teacher" value="${escapeHtml(pupil.teacher)}" aria-label="${escapeHtml(pupil.name)} teacher">
+        </td>
         ${scoreCells}
         <td data-pupil-output="percentage" data-pupil-index="${pupilIndex}">${percentageText}</td>
         <td data-pupil-output="band" data-pupil-index="${pupilIndex}">${analysis.overallPercentage === null ? "-" : analysis.tone.label}</td>
+        <td>
+          <input class="grade-input" data-pupil-index="${pupilIndex}" data-pupil-field="grade" value="${escapeHtml(pupil.grade)}" aria-label="${escapeHtml(pupil.name)} grade">
+        </td>
         <td>
           <button type="button" class="small-action" data-select-pupil="${pupilIndex}">View</button>
         </td>
@@ -995,8 +1019,9 @@ pupilRowsEl.addEventListener("input", (event) => {
   const pupilIndex = Number(input.dataset.pupilIndex);
   if (!Number.isInteger(pupilIndex)) return;
 
-  if (input.dataset.pupilField === "name") {
-    pupils[pupilIndex].name = input.value.trim() || `Pupil ${pupilIndex + 1}`;
+  if (input.dataset.pupilField) {
+    const field = input.dataset.pupilField;
+    pupils[pupilIndex][field] = field === "name" ? input.value.trim() || `Pupil ${pupilIndex + 1}` : input.value.trim();
     if (pupils[pupilIndex].id === selectedPupilId) renderSelectedFeedback();
     renderValidation();
     scheduleAutosave();
@@ -1307,7 +1332,7 @@ function printReportPack(reportPupils = pupils, titleSuffix = "") {
       return `
         <section class="pupil-report">
           <h2>${escapeHtml(pupil.name)}</h2>
-          <p class="meta">Overall: ${analysis.overallPercentage === null ? "No marks yet" : `${analysis.overallPercentage}%`} · ${escapeHtml(analysis.tone.label)}</p>
+          <p class="meta">Class: ${escapeHtml(pupil.classGroup || "-")} · Teacher: ${escapeHtml(pupil.teacher || "-")} · Grade: ${escapeHtml(pupil.grade || "-")} · Overall: ${analysis.overallPercentage === null ? "No marks yet" : `${analysis.overallPercentage}%`} · ${escapeHtml(analysis.tone.label)}</p>
           <h3>What went well</h3>
           <p>${escapeHtml(feedback.whatWentWell)}</p>
           <h3>Even better if</h3>
@@ -1481,14 +1506,18 @@ function parseXml(text) {
   return new DOMParser().parseFromString(text, "application/xml");
 }
 
-function getWorkbookSheetPath(files) {
+function getWorkbookSheets(files) {
   const workbook = parseXml(xmlText(files.get("xl/workbook.xml")));
   const rels = parseXml(xmlText(files.get("xl/_rels/workbook.xml.rels")));
-  const firstSheet = workbook.getElementsByTagNameNS("*", "sheet")[0];
-  const relId = firstSheet?.getAttribute("r:id");
-  const rel = [...rels.getElementsByTagNameNS("*", "Relationship")].find((item) => item.getAttribute("Id") === relId);
-  const target = rel?.getAttribute("Target") || "worksheets/sheet1.xml";
-  return `xl/${target.replace(/^\/?xl\//, "")}`;
+  return [...workbook.getElementsByTagNameNS("*", "sheet")].map((sheet) => {
+    const relId = sheet.getAttribute("r:id");
+    const rel = [...rels.getElementsByTagNameNS("*", "Relationship")].find((item) => item.getAttribute("Id") === relId);
+    const target = rel?.getAttribute("Target") || "worksheets/sheet1.xml";
+    return {
+      name: sheet.getAttribute("name") || "Sheet",
+      path: `xl/${target.replace(/^\/?xl\//, "")}`,
+    };
+  });
 }
 
 function parseSharedStrings(files) {
@@ -1498,10 +1527,10 @@ function parseSharedStrings(files) {
   return [...doc.getElementsByTagNameNS("*", "si")].map((si) => [...si.getElementsByTagNameNS("*", "t")].map((t) => t.textContent || "").join(""));
 }
 
-function parseSheetMatrix(files) {
+function parseSheetMatrix(files, sheetPath = null) {
   const sharedStrings = parseSharedStrings(files);
-  const sheetPath = getWorkbookSheetPath(files);
-  const sheet = parseXml(xmlText(files.get(sheetPath)));
+  const path = sheetPath || getWorkbookSheets(files)[0]?.path;
+  const sheet = parseXml(xmlText(files.get(path)));
   const rows = [];
   const formulaCells = new Set();
 
@@ -1531,57 +1560,121 @@ function isRawMarkColumn(header, maxMark, formulaCells, col) {
   return true;
 }
 
-async function importXlsxMarkbook(file) {
+function classifyExcelColumns(rows, formulaCells) {
+  const headers = rows[0] || [];
+  const maxes = rows[1] || [];
+  return headers.map((header, col) => {
+    const text = String(header || "").toLowerCase();
+    const max = Number(maxes[col]);
+    if (col === 0) return { header, col, decision: "metadata", reason: "Pupil name column" };
+    if (col === 1) return { header, col, decision: "metadata", reason: "Class/group column" };
+    if (col === 2) return { header, col, decision: "metadata", reason: "Teacher column" };
+    if (text === "grade") return { header, col, decision: "metadata", reason: "Grade column" };
+    if (!header) return { header, col, decision: "skip", reason: "Blank header" };
+    if (!Number.isFinite(max)) return { header, col, decision: "skip", reason: "No numeric max mark in row 2" };
+    if (formulaCells.has(`2:${col}`)) return { header, col, decision: "skip", reason: "Row 2 max mark is calculated" };
+    if (/%|weighting|total|grade|written|practical\s*\/|prac weighting/.test(text)) return { header, col, decision: "skip", reason: "Calculated summary/percentage/weighting column" };
+    return { header, col, max, decision: "import", reason: `Raw mark column, max ${max}` };
+  });
+}
+
+function renderExcelPreview(sheetIndex = 0) {
+  if (!pendingExcelWorkbook) return;
+  const sheetInfo = pendingExcelWorkbook.sheets[sheetIndex];
+  const { rows, formulaCells } = parseSheetMatrix(pendingExcelWorkbook.files, sheetInfo.path);
+  const decisions = classifyExcelColumns(rows, formulaCells);
+  const imported = decisions.filter((item) => item.decision === "import");
+  const skipped = decisions.filter((item) => item.decision === "skip");
+  const metadata = decisions.filter((item) => item.decision === "metadata");
+  const pupilsFound = rows.slice(2).filter((row) => row?.[0]).length;
+
+  pendingExcelWorkbook.current = { rows, decisions, sheetIndex };
+  excelPreviewSummaryEl.innerHTML = `
+    <div class="summary-tile"><span>Sheet</span><strong>${escapeHtml(sheetInfo.name)}</strong></div>
+    <div class="summary-tile"><span>Pupils</span><strong>${pupilsFound}</strong></div>
+    <div class="summary-tile"><span>Questions</span><strong>${imported.length}</strong></div>
+    <div class="summary-tile"><span>Skipped</span><strong>${skipped.length}</strong></div>
+  `;
+  excelPreviewRowsEl.innerHTML = decisions
+    .filter((item) => item.header || item.decision !== "skip")
+    .map((item) => `
+      <tr>
+        <td>${item.col + 1}</td>
+        <td>${escapeHtml(item.header || "-")}</td>
+        <td>${item.decision}</td>
+        <td>${escapeHtml(item.reason)}</td>
+      </tr>
+    `).join("");
+  setSaveStatus(`Previewing ${imported.length} raw mark columns, ${metadata.length} metadata columns, ${skipped.length} skipped columns.`);
+}
+
+async function previewXlsxMarkbook(file) {
   try {
     const files = await unzipXlsx(await file.arrayBuffer());
-    const { rows, formulaCells } = parseSheetMatrix(files);
-    const headers = rows[0] || [];
-    const maxes = rows[1] || [];
-    const markColumns = headers
-      .map((header, col) => ({ header, col, max: Number(maxes[col]) }))
-      .filter((item) => isRawMarkColumn(item.header, item.max, formulaCells, item.col));
-
-    if (markColumns.length === 0) {
-      setSaveStatus("No raw mark columns found in the Excel file.");
-      return;
-    }
-
-    pushUndo();
-    lastImportIssues = [];
-    questions = markColumns.map((item, index) => createQuestion(index + 1, String(item.header).trim(), item.max));
-    pupils = rows.slice(2)
-      .filter((row) => row?.[0])
-      .map((row, rowIndex) => ({
-        id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${rowIndex}`,
-        name: String(row[0]).trim() || `Pupil ${rowIndex + 1}`,
-        scores: markColumns.map((item) => clampImportedMark(row[item.col] ?? "", item.max, `${row[0] || `Pupil ${rowIndex + 1}`} ${item.header}`)),
-        diagnostics: markColumns.map(() => []),
-      }));
-    selectedPupilId = pupils[0]?.id;
-    rerenderAll();
-    setSaveStatus(`Imported ${pupils.length} pupils and ${questions.length} questions from Excel.`);
+    const sheets = getWorkbookSheets(files);
+    pendingExcelWorkbook = { files, sheets, current: null };
+    excelSheetSelectEl.innerHTML = sheets.map((sheet, index) => `<option value="${index}">${escapeHtml(sheet.name)}</option>`).join("");
+    excelPreviewPanelEl.classList.remove("hidden");
+    renderExcelPreview(0);
   } catch (error) {
     setSaveStatus(`Excel import failed: ${error.message}`);
   }
 }
 
+function applyExcelImport() {
+  if (!pendingExcelWorkbook?.current) return;
+  const { rows, decisions } = pendingExcelWorkbook.current;
+  const markColumns = decisions.filter((item) => item.decision === "import");
+  if (markColumns.length === 0) {
+    setSaveStatus("No raw mark columns selected for Excel import.");
+    return;
+  }
+
+  const gradeColumn = decisions.find((item) => String(item.header || "").toLowerCase() === "grade");
+  pushUndo();
+  lastImportIssues = [];
+  questions = markColumns.map((item, index) => createQuestion(index + 1, String(item.header).trim(), item.max));
+  pupils = rows.slice(2)
+    .filter((row) => row?.[0])
+    .map((row, rowIndex) => ({
+      id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${rowIndex}`,
+      name: String(row[0]).trim() || `Pupil ${rowIndex + 1}`,
+      classGroup: String(row[1] || ""),
+      teacher: String(row[2] || ""),
+      grade: gradeColumn ? String(row[gradeColumn.col] || "") : "",
+      scores: markColumns.map((item) => clampImportedMark(row[item.col] ?? "", item.max, `${row[0] || `Pupil ${rowIndex + 1}`} ${item.header}`)),
+      diagnostics: markColumns.map(() => []),
+    }));
+  selectedPupilId = pupils[0]?.id;
+  pendingExcelWorkbook = null;
+  excelPreviewPanelEl.classList.add("hidden");
+  rerenderAll();
+  setSaveStatus(`Imported ${pupils.length} pupils and ${questions.length} questions from Excel.`);
+}
+
 function exportCsv() {
   const headers = [
     "Pupil",
+    "Class",
+    "Teacher",
     ...questions.map((question) => `Q${question.number}`),
     ...questions.map((question) => `Q${question.number} diagnostic`),
     "Overall %",
     "Band",
+    "Grade",
     "Feedback",
   ];
   const rows = pupils.map((pupil) => {
     const feedback = buildFeedbackText(pupil);
     return [
       pupil.name,
+      pupil.classGroup,
+      pupil.teacher,
       ...pupil.scores,
       ...questions.map((_, index) => (pupil.diagnostics?.[index] || []).map((value) => diagnosticOptions[value]).join("; ")),
       feedback.analysis.overallPercentage ?? "",
       feedback.analysis.overallPercentage === null ? "" : feedback.analysis.tone.label,
+      pupil.grade,
       `${feedback.whatWentWell}\n\n${feedback.evenBetterIf}`,
     ];
   });
@@ -1920,7 +2013,7 @@ csvFileInput.addEventListener("change", async () => {
   const file = csvFileInput.files?.[0];
   if (!file) return;
   if (file.name.toLowerCase().endsWith(".xlsx")) {
-    await importXlsxMarkbook(file);
+    await previewXlsxMarkbook(file);
     csvFileInput.value = "";
     return;
   }
@@ -1934,6 +2027,12 @@ csvFileInput.addEventListener("change", async () => {
 });
 
 applyCsvMappingButton.addEventListener("click", importCsvWithMapping);
+
+excelSheetSelectEl.addEventListener("change", () => {
+  renderExcelPreview(Number(excelSheetSelectEl.value));
+});
+
+applyExcelImportButton.addEventListener("click", applyExcelImport);
 
 structureFileInput.addEventListener("change", async () => {
   const file = structureFileInput.files?.[0];
