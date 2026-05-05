@@ -19,14 +19,17 @@
             <select id="saved-slots" aria-label="Saved classes and papers"></select>
             <button id="save-data" type="button" class="secondary-action">Save</button>
             <button id="load-data" type="button" class="secondary-action">Load</button>
+            <button id="undo-change" type="button" class="secondary-action">Undo</button>
             <button id="paste-marks" type="button" class="secondary-action">Paste marks</button>
-            <button id="import-csv" type="button" class="secondary-action">Import CSV</button>
+            <button id="import-csv" type="button" class="secondary-action">Import marks</button>
             <button id="import-structure" type="button" class="secondary-action">Import structure</button>
             <button id="export-csv" type="button" class="secondary-action">Export CSV</button>
+            <button id="print-reports" type="button" class="secondary-action">Report pack</button>
+            <button id="export-summary" type="button" class="secondary-action">Summary</button>
             <button id="copy-all-feedback" type="button" class="secondary-action">Copy all</button>
             <button id="copy-feedback" type="button" class="primary-action">Copy selected</button>
           </div>
-          <input id="csv-file" type="file" accept=".csv,text/csv" hidden>
+          <input id="csv-file" type="file" accept=".csv,.tsv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
           <input id="structure-file" type="file" accept=".csv,text/csv" hidden>
         </header>
 
@@ -62,6 +65,30 @@
               </select>
             </label>
           </div>
+        </section>
+
+        <section class="panel controls-panel" aria-labelledby="templates-title">
+          <div>
+            <h2 id="templates-title">Templates</h2>
+            <p>Save or load exam structures and comment banks without pupil data.</p>
+          </div>
+          <div class="template-controls">
+            <input id="template-name" type="text" value="Physics template" aria-label="Template name">
+            <select id="template-slots" aria-label="Saved templates"></select>
+            <button id="save-template" type="button" class="secondary-action">Save template</button>
+            <button id="load-template" type="button" class="secondary-action">Load template</button>
+          </div>
+        </section>
+
+        <section id="csv-mapping-panel" class="panel mapping-panel hidden" aria-labelledby="mapping-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="mapping-title">Import Mapping</h2>
+              <p>Match markbook columns to pupil names, question scores, and optional diagnostics.</p>
+            </div>
+            <button id="apply-csv-mapping" type="button" class="primary-action">Apply import</button>
+          </div>
+          <div id="csv-mapping-fields" class="mapping-grid"></div>
         </section>
 
         <section class="panel validation-panel" aria-labelledby="validation-title">
@@ -113,6 +140,19 @@
             <button id="add-pupil" type="button" class="primary-action">Add pupil</button>
           </div>
 
+          <div class="cohort-tools">
+            <input id="pupil-search" type="search" placeholder="Search pupils" aria-label="Search pupils">
+            <select id="pupil-filter" aria-label="Filter pupils">
+              <option value="all">All pupils</option>
+              <option value="incomplete">Incomplete marks</option>
+              <option value="below-average">Below average threshold</option>
+              <option value="diagnostics">Has diagnostics</option>
+            </select>
+            <button id="copy-filtered-feedback" type="button" class="secondary-action">Copy filtered</button>
+            <button id="print-filtered-reports" type="button" class="secondary-action">Print filtered</button>
+            <span id="filter-count" class="save-status">Showing all pupils</span>
+          </div>
+
           <div class="table-wrap">
             <table class="cohort-table">
               <thead>
@@ -160,6 +200,33 @@
                 </tr>
               </thead>
               <tbody id="intervention-rows"></tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-wrap">
+            <table class="analysis-table">
+              <thead>
+                <tr>
+                  <th>Diagnostic</th>
+                  <th>Total</th>
+                  <th>Most affected question</th>
+                  <th>Suggested response</th>
+                </tr>
+              </thead>
+              <tbody id="diagnostic-analysis-rows"></tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-wrap">
+            <table class="analysis-table">
+              <thead>
+                <tr>
+                  <th>Group</th>
+                  <th>Pupils</th>
+                  <th>Focus</th>
+                </tr>
+              </thead>
+              <tbody id="intervention-group-rows"></tbody>
             </table>
           </div>
         </section>

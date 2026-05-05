@@ -119,6 +119,20 @@ textarea {
   gap: 12px;
 }
 
+.template-controls,
+.mapping-grid,
+.cohort-tools {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.cohort-tools {
+  grid-template-columns: minmax(180px, 1fr) 190px auto auto auto;
+  align-items: center;
+  margin-top: 16px;
+}
+
 .threshold-grid label {
   display: grid;
   gap: 6px;
@@ -352,6 +366,17 @@ td:first-child,
   color: #046c4e;
 }
 
+.mapping-panel.hidden {
+  display: none;
+}
+
+.mapping-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
 .band {
   display: inline-flex;
   align-items: center;
@@ -530,6 +555,12 @@ td:first-child,
   }
 
   .threshold-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .template-controls,
+  .mapping-grid,
+  .cohort-tools {
     grid-template-columns: 1fr;
   }
 

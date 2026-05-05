@@ -13,6 +13,7 @@ const defaultQuestions = [
 
 const storageKey = "physics-feedback-generator-state";
 const savedSetsKey = "physics-feedback-generator-saved-sets";
+const templateSetsKey = "physics-feedback-generator-templates";
 const diagnosticOptions = {
   calculation: "Calculation issue",
   explanation: "Explanation issue",
@@ -78,6 +79,12 @@ function createPupil(index) {
 let questions = cloneQuestions();
 let pupils = [createPupil(1), createPupil(2), createPupil(3)];
 let selectedPupilId = pupils[0].id;
+let undoState = null;
+let pendingCsvRows = null;
+let autosaveTimer = null;
+let isApplyingState = false;
+let autosaveReady = false;
+let lastImportIssues = [];
 
 const topicRowsEl = document.querySelector("#topic-rows");
 const pupilRowsEl = document.querySelector("#pupil-rows");
@@ -85,6 +92,8 @@ const pupilScoreHeadEl = document.querySelector("#pupil-score-head");
 const cohortSummaryEl = document.querySelector("#cohort-summary");
 const topicAverageRowsEl = document.querySelector("#topic-average-rows");
 const interventionRowsEl = document.querySelector("#intervention-rows");
+const diagnosticAnalysisRowsEl = document.querySelector("#diagnostic-analysis-rows");
+const interventionGroupRowsEl = document.querySelector("#intervention-group-rows");
 const goodThresholdEl = document.querySelector("#good-threshold");
 const averageThresholdEl = document.querySelector("#average-threshold");
 const feedbackLengthEl = document.querySelector("#feedback-length");
@@ -99,18 +108,33 @@ const copyAllButton = document.querySelector("#copy-all-feedback");
 const importCsvButton = document.querySelector("#import-csv");
 const importStructureButton = document.querySelector("#import-structure");
 const exportCsvButton = document.querySelector("#export-csv");
+const printReportsButton = document.querySelector("#print-reports");
+const exportSummaryButton = document.querySelector("#export-summary");
 const csvFileInput = document.querySelector("#csv-file");
 const structureFileInput = document.querySelector("#structure-file");
 const saveDataButton = document.querySelector("#save-data");
 const loadDataButton = document.querySelector("#load-data");
+const undoChangeButton = document.querySelector("#undo-change");
 const saveNameInput = document.querySelector("#save-name");
 const savedSlotsSelect = document.querySelector("#saved-slots");
+const templateNameInput = document.querySelector("#template-name");
+const templateSlotsSelect = document.querySelector("#template-slots");
+const saveTemplateButton = document.querySelector("#save-template");
+const loadTemplateButton = document.querySelector("#load-template");
 const pasteMarksButton = document.querySelector("#paste-marks");
 const saveStatusEl = document.querySelector("#save-status");
 const resetButton = document.querySelector("#reset-topics");
 const addQuestionButton = document.querySelector("#add-question");
 const addPupilButton = document.querySelector("#add-pupil");
 const diagnosticRowsEl = document.querySelector("#diagnostic-rows");
+const pupilSearchEl = document.querySelector("#pupil-search");
+const pupilFilterEl = document.querySelector("#pupil-filter");
+const filterCountEl = document.querySelector("#filter-count");
+const copyFilteredFeedbackButton = document.querySelector("#copy-filtered-feedback");
+const printFilteredReportsButton = document.querySelector("#print-filtered-reports");
+const csvMappingPanelEl = document.querySelector("#csv-mapping-panel");
+const csvMappingFieldsEl = document.querySelector("#csv-mapping-fields");
+const applyCsvMappingButton = document.querySelector("#apply-csv-mapping");
 
 function escapeHtml(value) {
   return String(value)
@@ -164,6 +188,24 @@ function clampMark(value, max) {
   return Math.min(Math.max(numeric, 0), max);
 }
 
+function clampImportedMark(value, max, context) {
+  if (value === "") return "";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    lastImportIssues.push(`${context}: ignored non-numeric mark "${value}".`);
+    return "";
+  }
+  if (numeric > max) {
+    lastImportIssues.push(`${context}: clipped ${numeric} to max ${max}.`);
+    return max;
+  }
+  if (numeric < 0) {
+    lastImportIssues.push(`${context}: clipped ${numeric} to 0.`);
+    return 0;
+  }
+  return numeric;
+}
+
 function parseOptionalNumber(value) {
   if (value === "") return null;
   const numeric = Number(value);
@@ -215,6 +257,28 @@ function diagnosticPhrase(values) {
   return values.map((value) => diagnosticOptions[value]?.toLowerCase()).filter(Boolean).join(" and ");
 }
 
+function cloneState() {
+  return JSON.parse(JSON.stringify(getAppState()));
+}
+
+function pushUndo() {
+  undoState = cloneState();
+  undoChangeButton.disabled = false;
+}
+
+function restoreUndo() {
+  if (!undoState) {
+    setSaveStatus("No change to undo.");
+    return;
+  }
+
+  const state = undoState;
+  undoState = null;
+  undoChangeButton.disabled = true;
+  applyAppState(state);
+  setSaveStatus("Restored the previous state.");
+}
+
 function getTopicStats() {
   return questions.map((question, questionIndex) => {
     const percentages = pupils
@@ -261,6 +325,22 @@ function getPeerTopicStats(questionIndex, pupilIndex) {
     average: average(percentages),
     count: percentages.length,
   };
+}
+
+function pupilMatchesFilter(pupil) {
+  const query = pupilSearchEl.value.trim().toLowerCase();
+  if (query && !pupil.name.toLowerCase().includes(query)) return false;
+
+  const filter = pupilFilterEl.value;
+  const analysis = analysePupil(pupil);
+  if (filter === "incomplete") return pupil.scores.some((score) => score === "");
+  if (filter === "below-average") return analysis.overallPercentage !== null && analysis.overallPercentage < Number(averageThresholdEl.value || 40);
+  if (filter === "diagnostics") return pupil.diagnostics.some((items) => items.length > 0);
+  return true;
+}
+
+function getFilteredPupils() {
+  return pupils.filter(pupilMatchesFilter);
 }
 
 function toneForOverall(percentage) {
@@ -430,11 +510,16 @@ function renderPupilHead() {
     <th>Overall</th>
     <th>Band</th>
     <th>Feedback</th>
+    <th>Actions</th>
   `;
 }
 
 function renderPupilRows() {
+  const filteredIndexes = new Set(pupils.map((pupil, index) => (pupilMatchesFilter(pupil) ? index : null)).filter((index) => index !== null));
+  filterCountEl.textContent = `Showing ${filteredIndexes.size}/${pupils.length} pupils`;
+
   pupilRowsEl.innerHTML = pupils.map((pupil, pupilIndex) => {
+    if (!filteredIndexes.has(pupilIndex)) return "";
     const analysis = analysePupil(pupil);
     const percentageText = analysis.overallPercentage === null ? "-" : `${analysis.overallPercentage}%`;
     const selectedClass = pupil.id === selectedPupilId ? " selected-row" : "";
@@ -469,6 +554,10 @@ function renderPupilRows() {
         <td data-pupil-output="band" data-pupil-index="${pupilIndex}">${analysis.overallPercentage === null ? "-" : analysis.tone.label}</td>
         <td>
           <button type="button" class="small-action" data-select-pupil="${pupilIndex}">View</button>
+        </td>
+        <td>
+          <button type="button" class="small-action" data-duplicate-pupil="${pupilIndex}">Duplicate</button>
+          <button type="button" class="small-action danger-action" data-delete-pupil="${pupilIndex}">Delete</button>
         </td>
       </tr>
     `;
@@ -566,6 +655,81 @@ function renderCohortAnalysis() {
         </tr>
       `;
     }).join("");
+
+  const diagnosticStats = Object.keys(diagnosticOptions).map((diagnostic) => {
+    const byQuestion = questions.map((question, questionIndex) => ({
+      question,
+      count: pupils.filter((pupil) => pupil.diagnostics?.[questionIndex]?.includes(diagnostic)).length,
+    }));
+    const total = byQuestion.reduce((sum, item) => sum + item.count, 0);
+    const mostAffected = byQuestion.slice().sort((a, b) => b.count - a.count)[0];
+
+    return {
+      diagnostic,
+      total,
+      mostAffected,
+    };
+  }).filter((item) => item.total > 0).sort((a, b) => b.total - a.total);
+
+  diagnosticAnalysisRowsEl.innerHTML = diagnosticStats.length === 0
+    ? '<tr><td colspan="4">No diagnostics recorded yet.</td></tr>'
+    : diagnosticStats.map((item) => {
+      const response = item.diagnostic === "calculation"
+        ? "Model multi-step working and require equation, substitution, answer, unit."
+        : item.diagnostic === "explanation"
+          ? "Use short written-response practice with command-word annotation."
+          : item.diagnostic === "units"
+            ? "Run a units and prefixes retrieval starter before the next question set."
+            : "Practise reading command words and planning marks before answering.";
+
+      return `
+        <tr>
+          <td>${diagnosticOptions[item.diagnostic]}</td>
+          <td>${item.total}</td>
+          <td>Q${item.mostAffected.question.number}: ${escapeHtml(item.mostAffected.question.topic)} (${item.mostAffected.count})</td>
+          <td>${response}</td>
+        </tr>
+      `;
+    }).join("");
+
+  const groups = new Map();
+  pupils.forEach((pupil) => {
+    const analysis = analysePupil(pupil);
+    if (analysis.marked.length === 0) return;
+
+    const weakest = analysis.marked.slice().sort((a, b) => a.percentage - b.percentage)[0];
+    if (weakest && weakest.percentage < Number(averageThresholdEl.value || 40)) {
+      const key = `Topic: Q${weakest.number} ${weakest.topic}`;
+      if (!groups.has(key)) groups.set(key, { pupils: [], focus: `Reteach ${weakest.topic} and practise Q${weakest.number}-style exam questions.` });
+      groups.get(key).pupils.push(pupil.name);
+    }
+
+    const diagnostics = analysis.marked.flatMap((question) => question.diagnostics);
+    const diagnosticCounts = diagnostics.reduce((counts, diagnostic) => {
+      counts[diagnostic] = (counts[diagnostic] || 0) + 1;
+      return counts;
+    }, {});
+    const topDiagnostic = Object.entries(diagnosticCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (topDiagnostic) {
+      const key = `Diagnostic: ${diagnosticOptions[topDiagnostic]}`;
+      if (!groups.has(key)) groups.set(key, { pupils: [], focus: `Target ${diagnosticOptions[topDiagnostic].toLowerCase()} with short retrieval and guided practice.` });
+      groups.get(key).pupils.push(pupil.name);
+    }
+  });
+
+  const groupRows = [...groups.entries()]
+    .filter(([, group]) => group.pupils.length > 0)
+    .sort((a, b) => b[1].pupils.length - a[1].pupils.length)
+    .slice(0, 8);
+  interventionGroupRowsEl.innerHTML = groupRows.length === 0
+    ? '<tr><td colspan="3">Enter marks and diagnostics to generate intervention groups.</td></tr>'
+    : groupRows.map(([name, group]) => `
+      <tr>
+        <td>${escapeHtml(name)}</td>
+        <td>${escapeHtml(group.pupils.join(", "))}</td>
+        <td>${escapeHtml(group.focus)}</td>
+      </tr>
+    `).join("");
 }
 
 function renderSelectedFeedback() {
@@ -660,6 +824,8 @@ function getValidationWarnings() {
   if (emptyComments > 0) warnings.push(`${emptyComments} question${emptyComments === 1 ? " has" : "s have"} an empty comment-bank field.`);
   if (invalidThresholds) warnings.push("Average threshold should be lower than the good threshold.");
   if (questions.length === 0) warnings.push("At least one question is needed.");
+  lastImportIssues.slice(0, 8).forEach((issue) => warnings.push(issue));
+  if (lastImportIssues.length > 8) warnings.push(`${lastImportIssues.length - 8} more import issue${lastImportIssues.length - 8 === 1 ? "" : "s"} not shown.`);
 
   return warnings;
 }
@@ -701,6 +867,7 @@ function updatePupilOutputs() {
   renderSelectedFeedback();
   renderDiagnostics();
   renderValidation();
+  scheduleAutosave();
 }
 
 function rerenderAll() {
@@ -711,6 +878,7 @@ function rerenderAll() {
   renderSelectedFeedback();
   renderDiagnostics();
   renderValidation();
+  scheduleAutosave();
 }
 
 function renumberQuestions() {
@@ -718,6 +886,7 @@ function renumberQuestions() {
 }
 
 function addQuestion() {
+  pushUndo();
   const nextNumber = questions.length + 1;
   const question = createQuestion(nextNumber, `Question ${nextNumber}`, 10);
   questions.push(question);
@@ -735,6 +904,7 @@ function deleteQuestion(index) {
     return;
   }
 
+  pushUndo();
   questions.splice(index, 1);
   renumberQuestions();
   pupils = pupils.map((pupil) => ({
@@ -742,6 +912,34 @@ function deleteQuestion(index) {
     scores: pupil.scores.filter((_, scoreIndex) => scoreIndex !== index),
     diagnostics: (pupil.diagnostics || []).filter((_, diagnosticIndex) => diagnosticIndex !== index),
   }));
+  rerenderAll();
+}
+
+function duplicatePupil(index) {
+  const source = pupils[index];
+  if (!source) return;
+  pushUndo();
+  const duplicate = {
+    id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${index}`,
+    name: `${source.name} copy`,
+    scores: [...source.scores],
+    diagnostics: source.diagnostics.map((items) => [...items]),
+  };
+  pupils.splice(index + 1, 0, duplicate);
+  selectedPupilId = duplicate.id;
+  rerenderAll();
+}
+
+function deletePupil(index) {
+  if (pupils.length <= 1) {
+    setSaveStatus("At least one pupil is required.");
+    return;
+  }
+  pushUndo();
+  const removed = pupils.splice(index, 1)[0];
+  if (removed?.id === selectedPupilId) {
+    selectedPupilId = pupils[Math.max(0, index - 1)]?.id || pupils[0]?.id;
+  }
   rerenderAll();
 }
 
@@ -801,6 +999,7 @@ pupilRowsEl.addEventListener("input", (event) => {
     pupils[pupilIndex].name = input.value.trim() || `Pupil ${pupilIndex + 1}`;
     if (pupils[pupilIndex].id === selectedPupilId) renderSelectedFeedback();
     renderValidation();
+    scheduleAutosave();
     return;
   }
 
@@ -826,6 +1025,20 @@ pupilRowsEl.addEventListener("paste", (event) => {
 });
 
 pupilRowsEl.addEventListener("click", (event) => {
+  const duplicateButton = event.target.closest("[data-duplicate-pupil]");
+  if (duplicateButton) {
+    const pupilIndex = Number(duplicateButton.dataset.duplicatePupil);
+    if (Number.isInteger(pupilIndex)) duplicatePupil(pupilIndex);
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-delete-pupil]");
+  if (deleteButton) {
+    const pupilIndex = Number(deleteButton.dataset.deletePupil);
+    if (Number.isInteger(pupilIndex)) deletePupil(pupilIndex);
+    return;
+  }
+
   const button = event.target.closest("[data-select-pupil]");
   if (!button) return;
 
@@ -836,6 +1049,11 @@ pupilRowsEl.addEventListener("click", (event) => {
   renderPupilRows();
   renderSelectedFeedback();
   renderDiagnostics();
+});
+
+[pupilSearchEl, pupilFilterEl].forEach((input) => {
+  input.addEventListener("input", renderPupilRows);
+  input.addEventListener("change", renderPupilRows);
 });
 
 diagnosticRowsEl.addEventListener("change", (event) => {
@@ -854,6 +1072,8 @@ diagnosticRowsEl.addEventListener("change", (event) => {
   }
   pupil.diagnostics[questionIndex] = [...current].filter((value) => diagnosticOptions[value]);
   renderSelectedFeedback();
+  renderCohortAnalysis();
+  scheduleAutosave();
 });
 
 [goodThresholdEl, averageThresholdEl, feedbackLengthEl, feedbackToneEl].forEach((input) => {
@@ -862,6 +1082,7 @@ diagnosticRowsEl.addEventListener("change", (event) => {
 });
 
 resetButton.addEventListener("click", () => {
+  pushUndo();
   questions = cloneQuestions();
   pupils = pupils.map(normalisePupil);
   rerenderAll();
@@ -870,6 +1091,7 @@ resetButton.addEventListener("click", () => {
 addQuestionButton.addEventListener("click", addQuestion);
 
 addPupilButton.addEventListener("click", () => {
+  pushUndo();
   const pupil = createPupil(pupils.length + 1);
   pupils.push(pupil);
   selectedPupilId = pupil.id;
@@ -908,6 +1130,24 @@ function setSaveStatus(message) {
   saveStatusEl.textContent = message;
 }
 
+function scheduleAutosave() {
+  if (!autosaveReady || isApplyingState) return;
+  window.clearTimeout(autosaveTimer);
+  autosaveTimer = window.setTimeout(() => {
+    try {
+      const name = saveNameInput.value.trim() || "Autosaved class";
+      const savedSets = getSavedSets();
+      savedSets[name] = getAppState();
+      setSavedSets(savedSets);
+      renderSavedSlots();
+      savedSlotsSelect.value = name;
+      setSaveStatus(`Autosaved ${new Date().toLocaleTimeString()}.`);
+    } catch {
+      setSaveStatus("Autosave failed.");
+    }
+  }, 800);
+}
+
 function getSavedSets() {
   try {
     return JSON.parse(localStorage.getItem(savedSetsKey) || "{}");
@@ -920,12 +1160,56 @@ function setSavedSets(savedSets) {
   localStorage.setItem(savedSetsKey, JSON.stringify(savedSets));
 }
 
+function getTemplateSets() {
+  try {
+    return JSON.parse(localStorage.getItem(templateSetsKey) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function setTemplateSets(templateSets) {
+  localStorage.setItem(templateSetsKey, JSON.stringify(templateSets));
+}
+
 function renderSavedSlots() {
   const savedSets = getSavedSets();
   const names = Object.keys(savedSets).sort((a, b) => a.localeCompare(b));
   savedSlotsSelect.innerHTML = names.length === 0
     ? '<option value="">No saved classes</option>'
     : names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+}
+
+function renderTemplateSlots() {
+  const templateSets = getTemplateSets();
+  const names = Object.keys(templateSets).sort((a, b) => a.localeCompare(b));
+  templateSlotsSelect.innerHTML = names.length === 0
+    ? '<option value="">No saved templates</option>'
+    : names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+}
+
+function getTemplateState() {
+  return {
+    savedAt: new Date().toISOString(),
+    questions,
+    thresholds: {
+      good: goodThresholdEl.value,
+      average: averageThresholdEl.value,
+    },
+    feedback: getFeedbackSettings(),
+  };
+}
+
+function applyTemplateState(template) {
+  questions = Array.isArray(template.questions) && template.questions.length > 0
+    ? template.questions.map(normaliseQuestion)
+    : cloneQuestions();
+  pupils = pupils.map(normalisePupil);
+  if (template.thresholds?.good) goodThresholdEl.value = template.thresholds.good;
+  if (template.thresholds?.average) averageThresholdEl.value = template.thresholds.average;
+  if (template.feedback?.length) feedbackLengthEl.value = template.feedback.length;
+  if (template.feedback?.tone) feedbackToneEl.value = template.feedback.tone;
+  rerenderAll();
 }
 
 function getAppState() {
@@ -943,6 +1227,7 @@ function getAppState() {
 }
 
 function applyAppState(state) {
+  isApplyingState = true;
   questions = Array.isArray(state.questions) && state.questions.length > 0
     ? state.questions.map(normaliseQuestion)
     : cloneQuestions();
@@ -959,12 +1244,126 @@ function applyAppState(state) {
   if (state.feedback?.tone) feedbackToneEl.value = state.feedback.tone;
 
   rerenderAll();
+  isApplyingState = false;
 }
 
 function csvEscape(value) {
   const text = String(value ?? "");
   if (!/[",\n]/.test(text)) return text;
   return `"${text.replaceAll('"', '""')}"`;
+}
+
+function openPrintableDocument(title, bodyHtml) {
+  const win = window.open("", "_blank");
+  if (!win) {
+    setSaveStatus("Pop-up blocked. Allow pop-ups to open printable exports.");
+    return;
+  }
+  win.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${escapeHtml(title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #17202a; line-height: 1.45; margin: 32px; }
+          h1, h2, h3 { margin: 0 0 8px; }
+          section { break-inside: avoid; page-break-inside: avoid; margin: 0 0 28px; }
+          .pupil-report { page-break-after: always; border-top: 2px solid #0f766e; padding-top: 16px; }
+          .meta { color: #596574; font-weight: 700; margin-bottom: 14px; }
+          table { width: 100%; border-collapse: collapse; margin: 12px 0 22px; }
+          th, td { border-bottom: 1px solid #d9e0e8; padding: 8px; text-align: left; vertical-align: top; }
+          th { color: #596574; text-transform: uppercase; font-size: 12px; }
+          @media print { body { margin: 18mm; } button { display: none; } }
+        </style>
+      </head>
+      <body>
+        <button onclick="window.print()">Print / save PDF</button>
+        ${bodyHtml}
+      </body>
+    </html>
+  `);
+  win.document.close();
+}
+
+function printReportPack(reportPupils = pupils, titleSuffix = "") {
+  const title = saveNameInput.value.trim() || "Physics feedback reports";
+  const body = `
+    <h1>${escapeHtml(`${title}${titleSuffix}`)}</h1>
+    <p class="meta">Generated ${new Date().toLocaleString()}</p>
+    ${reportPupils.map((pupil) => {
+      const feedback = buildFeedbackText(pupil);
+      const analysis = feedback.analysis;
+      const breakdownRows = analysis.marked.map((question) => `
+        <tr>
+          <td>Q${question.number}</td>
+          <td>${escapeHtml(question.topic)}</td>
+          <td>${question.percentage}%</td>
+          <td>${question.band}</td>
+          <td>${question.diagnostics.map((item) => diagnosticOptions[item]).join(", ") || "-"}</td>
+        </tr>
+      `).join("");
+
+      return `
+        <section class="pupil-report">
+          <h2>${escapeHtml(pupil.name)}</h2>
+          <p class="meta">Overall: ${analysis.overallPercentage === null ? "No marks yet" : `${analysis.overallPercentage}%`} · ${escapeHtml(analysis.tone.label)}</p>
+          <h3>What went well</h3>
+          <p>${escapeHtml(feedback.whatWentWell)}</p>
+          <h3>Even better if</h3>
+          <p>${escapeHtml(feedback.evenBetterIf)}</p>
+          <table>
+            <thead><tr><th>Question</th><th>Topic</th><th>%</th><th>Band</th><th>Diagnostics</th></tr></thead>
+            <tbody>${breakdownRows || '<tr><td colspan="5">No marks entered.</td></tr>'}</tbody>
+          </table>
+        </section>
+      `;
+    }).join("")}
+  `;
+  openPrintableDocument(`${title}${titleSuffix}`, body);
+}
+
+function exportDepartmentSummary() {
+  const title = `${saveNameInput.value.trim() || "Physics cohort"} summary`;
+  const topicStats = getTopicStats();
+  const pupilAnalyses = pupils.map(analysePupil).filter((analysis) => analysis.overallPercentage !== null);
+  const cohortAverage = average(pupilAnalyses.map((analysis) => analysis.overallPercentage));
+  const topicRows = topicStats.map((stat) => `
+    <tr>
+      <td>Q${stat.question.number}</td>
+      <td>${escapeHtml(stat.question.topic)}</td>
+      <td>${stat.average === null ? "-" : `${stat.average}%`}</td>
+      <td>${stat.count}</td>
+      <td>${stat.band}</td>
+    </tr>
+  `).join("");
+  const diagnosticRows = Object.entries(diagnosticOptions).map(([key, label]) => {
+    const total = pupils.reduce((sum, pupil) => sum + pupil.diagnostics.filter((items) => items.includes(key)).length, 0);
+    return `<tr><td>${label}</td><td>${total}</td></tr>`;
+  }).join("");
+  const body = `
+    <h1>${escapeHtml(title)}</h1>
+    <p class="meta">Generated ${new Date().toLocaleString()} · Cohort average ${cohortAverage === null ? "-" : `${cohortAverage}%`} · ${pupilAnalyses.length}/${pupils.length} pupils marked</p>
+    <section>
+      <h2>Topic Averages</h2>
+      <table><thead><tr><th>Question</th><th>Topic</th><th>Average</th><th>Entries</th><th>Band</th></tr></thead><tbody>${topicRows}</tbody></table>
+    </section>
+    <section>
+      <h2>Diagnostic Totals</h2>
+      <table><thead><tr><th>Diagnostic</th><th>Total</th></tr></thead><tbody>${diagnosticRows}</tbody></table>
+    </section>
+    <section>
+      <h2>Suggested Priorities</h2>
+      <ol>
+        ${topicStats.filter((stat) => stat.average !== null).slice().sort((a, b) => a.average - b.average).slice(0, 5).map((stat) => `<li>Q${stat.question.number}: ${escapeHtml(stat.question.topic)} (${stat.average}%)</li>`).join("")}
+      </ol>
+    </section>
+    <section>
+      <h2>Intervention Groups</h2>
+      <table><thead><tr><th>Group</th><th>Pupils</th></tr></thead><tbody>${interventionGroupRowsEl.innerHTML || '<tr><td colspan="2">No groups generated.</td></tr>'}</tbody></table>
+    </section>
+  `;
+  openPrintableDocument(title, body);
 }
 
 function parseCsv(text) {
@@ -1009,6 +1408,161 @@ function parseDelimitedText(text) {
       .map((row) => row.split("\t"))
       .filter((row) => row.some((cell) => cell.trim() !== ""))
     : parseCsv(text);
+}
+
+function columnNameToIndex(name) {
+  return name.split("").reduce((sum, char) => (sum * 26) + char.charCodeAt(0) - 64, 0) - 1;
+}
+
+function parseCellRef(ref) {
+  const match = /^([A-Z]+)(\d+)$/.exec(ref);
+  if (!match) return null;
+  return {
+    col: columnNameToIndex(match[1]),
+    row: Number(match[2]) - 1,
+  };
+}
+
+async function inflateZipEntry(bytes, method) {
+  if (method === 0) return bytes;
+  if (method !== 8) throw new Error("Unsupported XLSX compression");
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+function findEndOfCentralDirectory(bytes) {
+  for (let index = bytes.length - 22; index >= 0; index -= 1) {
+    if (
+      bytes[index] === 0x50
+      && bytes[index + 1] === 0x4b
+      && bytes[index + 2] === 0x05
+      && bytes[index + 3] === 0x06
+    ) {
+      return index;
+    }
+  }
+  throw new Error("Could not read XLSX zip directory");
+}
+
+async function unzipXlsx(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const view = new DataView(arrayBuffer);
+  const decoder = new TextDecoder();
+  const eocd = findEndOfCentralDirectory(bytes);
+  const entryCount = view.getUint16(eocd + 10, true);
+  let centralOffset = view.getUint32(eocd + 16, true);
+  const files = new Map();
+
+  for (let entry = 0; entry < entryCount; entry += 1) {
+    if (view.getUint32(centralOffset, true) !== 0x02014b50) break;
+    const method = view.getUint16(centralOffset + 10, true);
+    const compressedSize = view.getUint32(centralOffset + 20, true);
+    const nameLength = view.getUint16(centralOffset + 28, true);
+    const extraLength = view.getUint16(centralOffset + 30, true);
+    const commentLength = view.getUint16(centralOffset + 32, true);
+    const localOffset = view.getUint32(centralOffset + 42, true);
+    const name = decoder.decode(bytes.slice(centralOffset + 46, centralOffset + 46 + nameLength));
+    const localNameLength = view.getUint16(localOffset + 26, true);
+    const localExtraLength = view.getUint16(localOffset + 28, true);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = bytes.slice(dataStart, dataStart + compressedSize);
+    files.set(name, await inflateZipEntry(compressed, method));
+    centralOffset += 46 + nameLength + extraLength + commentLength;
+  }
+
+  return files;
+}
+
+function xmlText(bytes) {
+  return new TextDecoder().decode(bytes);
+}
+
+function parseXml(text) {
+  return new DOMParser().parseFromString(text, "application/xml");
+}
+
+function getWorkbookSheetPath(files) {
+  const workbook = parseXml(xmlText(files.get("xl/workbook.xml")));
+  const rels = parseXml(xmlText(files.get("xl/_rels/workbook.xml.rels")));
+  const firstSheet = workbook.getElementsByTagNameNS("*", "sheet")[0];
+  const relId = firstSheet?.getAttribute("r:id");
+  const rel = [...rels.getElementsByTagNameNS("*", "Relationship")].find((item) => item.getAttribute("Id") === relId);
+  const target = rel?.getAttribute("Target") || "worksheets/sheet1.xml";
+  return `xl/${target.replace(/^\/?xl\//, "")}`;
+}
+
+function parseSharedStrings(files) {
+  const bytes = files.get("xl/sharedStrings.xml");
+  if (!bytes) return [];
+  const doc = parseXml(xmlText(bytes));
+  return [...doc.getElementsByTagNameNS("*", "si")].map((si) => [...si.getElementsByTagNameNS("*", "t")].map((t) => t.textContent || "").join(""));
+}
+
+function parseSheetMatrix(files) {
+  const sharedStrings = parseSharedStrings(files);
+  const sheetPath = getWorkbookSheetPath(files);
+  const sheet = parseXml(xmlText(files.get(sheetPath)));
+  const rows = [];
+  const formulaCells = new Set();
+
+  [...sheet.getElementsByTagNameNS("*", "row")].forEach((rowEl) => {
+    [...rowEl.getElementsByTagNameNS("*", "c")].forEach((cellEl) => {
+      const ref = parseCellRef(cellEl.getAttribute("r") || "");
+      if (!ref) return;
+      const type = cellEl.getAttribute("t");
+      const raw = cellEl.getElementsByTagNameNS("*", "v")[0]?.textContent ?? "";
+      let value = raw;
+      if (type === "s") value = sharedStrings[Number(raw)] ?? "";
+      if (type !== "s" && raw !== "" && !Number.isNaN(Number(raw))) value = Number(raw);
+      if (cellEl.getElementsByTagNameNS("*", "f").length > 0) formulaCells.add(`${ref.row}:${ref.col}`);
+      if (!rows[ref.row]) rows[ref.row] = [];
+      rows[ref.row][ref.col] = value;
+    });
+  });
+
+  return { rows, formulaCells };
+}
+
+function isRawMarkColumn(header, maxMark, formulaCells, col) {
+  const text = String(header || "").toLowerCase();
+  if (!header || !Number.isFinite(Number(maxMark))) return false;
+  if (formulaCells.has(`2:${col}`)) return false;
+  if (/%|weighting|total|grade|written|practical\s*\/|prac weighting/.test(text)) return false;
+  return true;
+}
+
+async function importXlsxMarkbook(file) {
+  try {
+    const files = await unzipXlsx(await file.arrayBuffer());
+    const { rows, formulaCells } = parseSheetMatrix(files);
+    const headers = rows[0] || [];
+    const maxes = rows[1] || [];
+    const markColumns = headers
+      .map((header, col) => ({ header, col, max: Number(maxes[col]) }))
+      .filter((item) => isRawMarkColumn(item.header, item.max, formulaCells, item.col));
+
+    if (markColumns.length === 0) {
+      setSaveStatus("No raw mark columns found in the Excel file.");
+      return;
+    }
+
+    pushUndo();
+    lastImportIssues = [];
+    questions = markColumns.map((item, index) => createQuestion(index + 1, String(item.header).trim(), item.max));
+    pupils = rows.slice(2)
+      .filter((row) => row?.[0])
+      .map((row, rowIndex) => ({
+        id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${rowIndex}`,
+        name: String(row[0]).trim() || `Pupil ${rowIndex + 1}`,
+        scores: markColumns.map((item) => clampImportedMark(row[item.col] ?? "", item.max, `${row[0] || `Pupil ${rowIndex + 1}`} ${item.header}`)),
+        diagnostics: markColumns.map(() => []),
+      }));
+    selectedPupilId = pupils[0]?.id;
+    rerenderAll();
+    setSaveStatus(`Imported ${pupils.length} pupils and ${questions.length} questions from Excel.`);
+  } catch (error) {
+    setSaveStatus(`Excel import failed: ${error.message}`);
+  }
 }
 
 function exportCsv() {
@@ -1061,16 +1615,18 @@ function importCsv(text) {
   });
 
   if (nameIndex === -1 || scoreIndexes.every((index) => index === -1)) {
-    setSaveStatus("CSV headers should include Pupil and Q1, Q2, etc.");
+    showCsvMapping(rows);
     return;
   }
 
+  pushUndo();
+  lastImportIssues = [];
   pupils = rows.slice(1).map((row, index) => ({
     id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${index}`,
     name: row[nameIndex]?.trim() || `Pupil ${index + 1}`,
     scores: questions.map((question, questionIndex) => {
       const scoreIndex = scoreIndexes[questionIndex];
-      return scoreIndex === -1 ? "" : clampMark(row[scoreIndex]?.trim() ?? "", Number(question.max));
+      return scoreIndex === -1 ? "" : clampImportedMark(row[scoreIndex]?.trim() ?? "", Number(question.max), `${row[nameIndex] || `Pupil ${index + 1}`} Q${question.number}`);
     }),
     diagnostics: questions.map((_, questionIndex) => {
       const diagnosticIndex = diagnosticIndexes[questionIndex];
@@ -1085,12 +1641,86 @@ function importCsv(text) {
   }));
   selectedPupilId = pupils[0]?.id;
   rerenderAll();
-  setSaveStatus(`Imported ${pupils.length} pupils from CSV.`);
+  setSaveStatus(`Imported ${pupils.length} pupils from CSV${lastImportIssues.length ? ` with ${lastImportIssues.length} issue(s)` : ""}.`);
+}
+
+function columnOptions(headers, selectedIndex = -1) {
+  return `
+    <option value="-1">Ignore</option>
+    ${headers.map((header, index) => `
+      <option value="${index}" ${index === selectedIndex ? "selected" : ""}>${escapeHtml(header || `Column ${index + 1}`)}</option>
+    `).join("")}
+  `;
+}
+
+function showCsvMapping(rows) {
+  pendingCsvRows = rows;
+  const headers = rows[0] || [];
+  const lowerHeaders = headers.map((header) => header.trim().toLowerCase());
+  const nameIndex = lowerHeaders.findIndex((header) => ["pupil", "name", "student"].includes(header));
+
+  csvMappingFieldsEl.innerHTML = `
+    <label>
+      Pupil name
+      <select data-map-field="name">${columnOptions(headers, nameIndex)}</select>
+    </label>
+    ${questions.map((question) => {
+      const scoreIndex = lowerHeaders.findIndex((header) => [`q${question.number}`, `question ${question.number}`, `question${question.number}`].includes(header));
+      const diagnosticIndex = lowerHeaders.findIndex((header) => [`q${question.number} diagnostic`, `question ${question.number} diagnostic`, `q${question.number} issue`].includes(header));
+      return `
+        <label>
+          Q${question.number} score
+          <select data-map-score="${question.number - 1}">${columnOptions(headers, scoreIndex)}</select>
+        </label>
+        <label>
+          Q${question.number} diagnostics
+          <select data-map-diagnostic="${question.number - 1}">${columnOptions(headers, diagnosticIndex)}</select>
+        </label>
+      `;
+    }).join("")}
+  `;
+  csvMappingPanelEl.classList.remove("hidden");
+  setSaveStatus("Map the CSV columns, then apply import.");
+}
+
+function importCsvWithMapping() {
+  if (!pendingCsvRows) return;
+  const nameIndex = Number(csvMappingFieldsEl.querySelector("[data-map-field='name']")?.value ?? -1);
+  if (nameIndex === -1) {
+    setSaveStatus("Choose a pupil-name column before importing.");
+    return;
+  }
+
+  pushUndo();
+  lastImportIssues = [];
+  pupils = pendingCsvRows.slice(1).map((row, index) => ({
+    id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${index}`,
+    name: row[nameIndex]?.trim() || `Pupil ${index + 1}`,
+    scores: questions.map((question, questionIndex) => {
+      const scoreIndex = Number(csvMappingFieldsEl.querySelector(`[data-map-score="${questionIndex}"]`)?.value ?? -1);
+      return scoreIndex === -1 ? "" : clampImportedMark(row[scoreIndex]?.trim() ?? "", Number(question.max), `${row[nameIndex] || `Pupil ${index + 1}`} Q${question.number}`);
+    }),
+    diagnostics: questions.map((_, questionIndex) => {
+      const diagnosticIndex = Number(csvMappingFieldsEl.querySelector(`[data-map-diagnostic="${questionIndex}"]`)?.value ?? -1);
+      const imported = diagnosticIndex === -1 ? "" : row[diagnosticIndex]?.trim().toLowerCase() || "";
+      return imported.split(/[;,]/).map((item) => item.trim()).map((item) => {
+        const matched = Object.entries(diagnosticOptions).find(([value, label]) => item === value || item === label.toLowerCase());
+        return matched?.[0];
+      }).filter(Boolean);
+    }),
+  }));
+  selectedPupilId = pupils[0]?.id;
+  pendingCsvRows = null;
+  csvMappingPanelEl.classList.add("hidden");
+  rerenderAll();
+  setSaveStatus(`Imported ${pupils.length} pupils using mapped columns${lastImportIssues.length ? ` with ${lastImportIssues.length} issue(s)` : ""}.`);
 }
 
 function importPastedMarks(text, startPupilIndex = 0, startQuestionIndex = 0, includesNames = null) {
   const rows = parseDelimitedText(text);
   if (rows.length === 0) return;
+  pushUndo();
+  lastImportIssues = [];
 
   const firstRow = rows[0].map((cell) => cell.trim().toLowerCase());
   const hasHeader = firstRow.some((cell) => ["pupil", "name", "student", "q1", "question 1"].includes(cell));
@@ -1109,13 +1739,13 @@ function importPastedMarks(text, startPupilIndex = 0, startQuestionIndex = 0, in
     row.slice(scoreStartColumn).forEach((cell, columnOffset) => {
       const questionIndex = startQuestionIndex + columnOffset;
       if (!questions[questionIndex]) return;
-      pupil.scores[questionIndex] = clampMark(cell.trim(), Number(questions[questionIndex].max));
+      pupil.scores[questionIndex] = clampImportedMark(cell.trim(), Number(questions[questionIndex].max), `${pupil.name} Q${questions[questionIndex].number}`);
     });
   });
 
   selectedPupilId = pupils[startPupilIndex]?.id || pupils[0]?.id;
   rerenderAll();
-  setSaveStatus(`Pasted ${dataRows.length} rows of marks.`);
+  setSaveStatus(`Pasted ${dataRows.length} rows of marks${lastImportIssues.length ? ` with ${lastImportIssues.length} issue(s)` : ""}.`);
 }
 
 function importExamStructure(text) {
@@ -1138,6 +1768,7 @@ function importExamStructure(text) {
     return;
   }
 
+  pushUndo();
   questions = rows.slice(1).map((row, index) => {
     const topic = row[topicIndex]?.trim() || `Question ${index + 1}`;
     const question = createQuestion(Number(row[questionIndex]) || index + 1, topic, Number(row[maxIndex]) || 1);
@@ -1178,6 +1809,15 @@ copyAllButton.addEventListener("click", () => {
   copyText(pupils.map(plainFeedbackForPupil).join("\n\n---\n\n"), copyAllButton);
 });
 
+copyFilteredFeedbackButton.addEventListener("click", () => {
+  const filteredPupils = getFilteredPupils();
+  copyText(filteredPupils.map(plainFeedbackForPupil).join("\n\n---\n\n"), copyFilteredFeedbackButton);
+});
+
+printFilteredReportsButton.addEventListener("click", () => {
+  printReportPack(getFilteredPupils(), " filtered reports");
+});
+
 saveDataButton.addEventListener("click", () => {
   try {
     const name = saveNameInput.value.trim() || "Untitled class";
@@ -1202,6 +1842,7 @@ loadDataButton.addEventListener("click", () => {
       setSaveStatus("No saved class found.");
       return;
     }
+    pushUndo();
     applyAppState(saved || JSON.parse(legacySaved));
     if (selectedName) saveNameInput.value = selectedName;
     setSaveStatus(`Loaded ${selectedName ? `"${selectedName}"` : "saved cohort"}.`);
@@ -1210,14 +1851,53 @@ loadDataButton.addEventListener("click", () => {
   }
 });
 
+undoChangeButton.addEventListener("click", restoreUndo);
+
 savedSlotsSelect.addEventListener("change", () => {
   if (savedSlotsSelect.value) saveNameInput.value = savedSlotsSelect.value;
+});
+
+saveNameInput.addEventListener("input", scheduleAutosave);
+
+saveTemplateButton.addEventListener("click", () => {
+  try {
+    const name = templateNameInput.value.trim() || "Untitled template";
+    const templates = getTemplateSets();
+    templates[name] = getTemplateState();
+    setTemplateSets(templates);
+    renderTemplateSlots();
+    templateSlotsSelect.value = name;
+    setSaveStatus(`Saved template "${name}".`);
+  } catch {
+    setSaveStatus("Could not save template.");
+  }
+});
+
+loadTemplateButton.addEventListener("click", () => {
+  const templates = getTemplateSets();
+  const name = templateSlotsSelect.value;
+  if (!templates[name]) {
+    setSaveStatus("No saved template selected.");
+    return;
+  }
+  pushUndo();
+  applyTemplateState(templates[name]);
+  templateNameInput.value = name;
+  setSaveStatus(`Loaded template "${name}".`);
+});
+
+templateSlotsSelect.addEventListener("change", () => {
+  if (templateSlotsSelect.value) templateNameInput.value = templateSlotsSelect.value;
 });
 
 exportCsvButton.addEventListener("click", () => {
   exportCsv();
   setSaveStatus("CSV exported.");
 });
+
+printReportsButton.addEventListener("click", printReportPack);
+
+exportSummaryButton.addEventListener("click", exportDepartmentSummary);
 
 importCsvButton.addEventListener("click", () => {
   csvFileInput.click();
@@ -1239,9 +1919,21 @@ pasteMarksButton.addEventListener("click", async () => {
 csvFileInput.addEventListener("change", async () => {
   const file = csvFileInput.files?.[0];
   if (!file) return;
-  importCsv(await file.text());
+  if (file.name.toLowerCase().endsWith(".xlsx")) {
+    await importXlsxMarkbook(file);
+    csvFileInput.value = "";
+    return;
+  }
+  const rows = parseDelimitedText(await file.text());
+  if (rows.length < 2) {
+    setSaveStatus("CSV needs a header row and at least one pupil.");
+  } else {
+    showCsvMapping(rows);
+  }
   csvFileInput.value = "";
 });
+
+applyCsvMappingButton.addEventListener("click", importCsvWithMapping);
 
 structureFileInput.addEventListener("change", async () => {
   const file = structureFileInput.files?.[0];
@@ -1250,5 +1942,8 @@ structureFileInput.addEventListener("change", async () => {
   structureFileInput.value = "";
 });
 
+undoChangeButton.disabled = true;
 renderSavedSlots();
+renderTemplateSlots();
 rerenderAll();
+autosaveReady = true;
