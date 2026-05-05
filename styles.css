@@ -19,6 +19,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
@@ -423,6 +427,84 @@ td:first-child,
   font-weight: 800;
 }
 
+.import-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0;
+  margin: 16px 0 0;
+  list-style: none;
+}
+
+.import-steps li {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--muted);
+  font-weight: 900;
+  text-align: center;
+  background: #f8fbfc;
+}
+
+.import-steps li.active {
+  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.import-steps li.done {
+  color: var(--accent-dark);
+  border-color: #c8e3df;
+  background: #e7f3f1;
+}
+
+.wizard-stage {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.wizard-note {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--muted);
+  background: #f8fbfc;
+  line-height: 1.45;
+}
+
+.wizard-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.wizard-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.column-toggle {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.column-toggle input {
+  width: 18px;
+  height: 18px;
+}
+
+.wizard-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
 .band {
   display: inline-flex;
   align-items: center;
@@ -653,7 +735,8 @@ td:first-child,
 
   .template-controls,
   .mapping-grid,
-  .cohort-tools {
+  .cohort-tools,
+  .wizard-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -733,7 +816,9 @@ td:first-child,
 
   .template-controls,
   .mapping-grid,
-  .cohort-tools {
+  .cohort-tools,
+  .wizard-grid,
+  .import-steps {
     grid-template-columns: 1fr;
   }
 
@@ -752,6 +837,11 @@ td:first-child,
 
   .summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .wizard-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   table {

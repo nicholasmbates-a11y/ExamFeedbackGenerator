@@ -94,15 +94,20 @@
         <section id="excel-preview-panel" class="panel mapping-panel hidden" aria-labelledby="excel-preview-title">
           <div class="section-heading">
             <div>
-              <h2 id="excel-preview-title">Excel Import Preview</h2>
-              <p>Choose a sheet, check the columns, then apply the import.</p>
+              <h2 id="excel-preview-title">Excel Import Wizard</h2>
+              <p id="excel-wizard-help">Choose the sheet, confirm pupil columns, then confirm question columns.</p>
             </div>
             <div class="action-row">
               <select id="excel-sheet-select" aria-label="Excel sheet"></select>
-              <button id="apply-excel-import" type="button" class="primary-action">Apply Excel import</button>
             </div>
           </div>
+          <ol class="import-steps" aria-label="Excel import steps">
+            <li data-excel-step="0" class="active">1 Sheet</li>
+            <li data-excel-step="1">2 Pupils</li>
+            <li data-excel-step="2">3 Questions</li>
+          </ol>
           <div id="excel-preview-summary" class="summary-grid"></div>
+          <div id="excel-wizard-stage" class="wizard-stage"></div>
           <div class="table-wrap compact-wrap">
             <table class="analysis-table">
               <thead>
@@ -115,6 +120,11 @@
               </thead>
               <tbody id="excel-preview-rows"></tbody>
             </table>
+          </div>
+          <div class="wizard-actions">
+            <button id="excel-back" type="button" class="secondary-action">Back</button>
+            <button id="excel-next" type="button" class="secondary-action">Next</button>
+            <button id="apply-excel-import" type="button" class="primary-action">Apply Excel import</button>
           </div>
         </section>
 

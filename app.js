@@ -145,7 +145,10 @@ const applyCsvMappingButton = document.querySelector("#apply-csv-mapping");
 const excelPreviewPanelEl = document.querySelector("#excel-preview-panel");
 const excelSheetSelectEl = document.querySelector("#excel-sheet-select");
 const excelPreviewSummaryEl = document.querySelector("#excel-preview-summary");
+const excelWizardStageEl = document.querySelector("#excel-wizard-stage");
 const excelPreviewRowsEl = document.querySelector("#excel-preview-rows");
+const excelBackButton = document.querySelector("#excel-back");
+const excelNextButton = document.querySelector("#excel-next");
 const applyExcelImportButton = document.querySelector("#apply-excel-import");
 
 function escapeHtml(value) {
@@ -1581,41 +1584,152 @@ function classifyExcelColumns(rows, formulaCells) {
   });
 }
 
+function excelColumnLabel(header, col) {
+  return `${col + 1}: ${header || "(blank)"}`;
+}
+
+function excelColumnOptions(rows, selected, allowNone = true) {
+  const headers = rows[0] || [];
+  const options = headers
+    .map((header, col) => `<option value="${col}"${Number(selected) === col ? " selected" : ""}>${escapeHtml(excelColumnLabel(header, col))}</option>`)
+    .join("");
+  return `${allowNone ? `<option value="-1"${Number(selected) === -1 ? " selected" : ""}>Not imported</option>` : ""}${options}`;
+}
+
+function getExcelSheetState(sheetIndex, rows, decisions) {
+  if (!pendingExcelWorkbook.sheetStates[sheetIndex]) {
+    const gradeColumn = decisions.find((item) => String(item.header || "").toLowerCase() === "grade");
+    pendingExcelWorkbook.sheetStates[sheetIndex] = {
+      step: 0,
+      metadata: {
+        name: 0,
+        classGroup: 1,
+        teacher: 2,
+        grade: gradeColumn?.col ?? -1,
+      },
+      questionSelections: Object.fromEntries(decisions
+        .filter((item) => item.decision === "import")
+        .map((item) => [item.col, true])),
+    };
+  }
+  return pendingExcelWorkbook.sheetStates[sheetIndex];
+}
+
+function enrichExcelDecisions(decisions, sheetState) {
+  return decisions.map((item) => {
+    const importable = item.decision === "import";
+    const selected = sheetState.questionSelections[item.col];
+    return {
+      ...item,
+      importable,
+      enabled: importable && selected !== false,
+    };
+  });
+}
+
+function renderExcelWizardSteps(step) {
+  excelPreviewPanelEl.querySelectorAll("[data-excel-step]").forEach((item) => {
+    const itemStep = Number(item.dataset.excelStep);
+    item.classList.toggle("active", itemStep === step);
+    item.classList.toggle("done", itemStep < step);
+  });
+}
+
+function renderExcelWizardStage(sheetInfo, rows, decisions, sheetState) {
+  const step = sheetState.step;
+  const importColumns = decisions.filter((item) => item.enabled);
+  renderExcelWizardSteps(step);
+  excelBackButton.disabled = step === 0;
+  excelNextButton.hidden = step === 2;
+  applyExcelImportButton.hidden = step !== 2;
+  applyExcelImportButton.disabled = importColumns.length === 0;
+
+  if (step === 0) {
+    excelWizardStageEl.innerHTML = `
+      <div class="wizard-note">
+        Using sheet <strong>${escapeHtml(sheetInfo.name)}</strong>. The wizard expects pupil data to start on row 3, with headers on row 1 and maximum marks on row 2.
+      </div>
+    `;
+    return;
+  }
+
+  if (step === 1) {
+    const metadata = sheetState.metadata;
+    excelWizardStageEl.innerHTML = `
+      <div class="wizard-note">Confirm where pupil details are stored. Only the pupil name column is required.</div>
+      <div class="wizard-grid">
+        <label>
+          Pupil name
+          <select data-excel-meta="name">${excelColumnOptions(rows, metadata.name, false)}</select>
+        </label>
+        <label>
+          Class/group
+          <select data-excel-meta="classGroup">${excelColumnOptions(rows, metadata.classGroup)}</select>
+        </label>
+        <label>
+          Teacher
+          <select data-excel-meta="teacher">${excelColumnOptions(rows, metadata.teacher)}</select>
+        </label>
+        <label>
+          Grade
+          <select data-excel-meta="grade">${excelColumnOptions(rows, metadata.grade)}</select>
+        </label>
+      </div>
+    `;
+    return;
+  }
+
+  excelWizardStageEl.innerHTML = `
+    <div class="wizard-note">
+      Confirm which raw mark columns should become questions. Columns with calculated percentages, totals, or non-numeric maximum marks are left out automatically.
+    </div>
+  `;
+}
+
 function renderExcelPreview(sheetIndex = 0) {
   if (!pendingExcelWorkbook) return;
   const sheetInfo = pendingExcelWorkbook.sheets[sheetIndex];
   const { rows, formulaCells } = parseSheetMatrix(pendingExcelWorkbook.files, sheetInfo.path);
-  const decisions = classifyExcelColumns(rows, formulaCells);
-  const imported = decisions.filter((item) => item.decision === "import");
+  const rawDecisions = classifyExcelColumns(rows, formulaCells);
+  const sheetState = getExcelSheetState(sheetIndex, rows, rawDecisions);
+  const decisions = enrichExcelDecisions(rawDecisions, sheetState);
+  const imported = decisions.filter((item) => item.enabled);
+  const available = decisions.filter((item) => item.importable);
   const skipped = decisions.filter((item) => item.decision === "skip");
   const metadata = decisions.filter((item) => item.decision === "metadata");
-  const pupilsFound = rows.slice(2).filter((row) => row?.[0]).length;
+  const pupilsFound = rows.slice(2).filter((row) => row?.[sheetState.metadata.name]).length;
 
-  pendingExcelWorkbook.current = { rows, decisions, sheetIndex };
+  pendingExcelWorkbook.current = { rows, decisions, sheetIndex, sheetState };
   excelPreviewSummaryEl.innerHTML = `
     <div class="summary-tile"><span>Sheet</span><strong>${escapeHtml(sheetInfo.name)}</strong></div>
     <div class="summary-tile"><span>Pupils</span><strong>${pupilsFound}</strong></div>
     <div class="summary-tile"><span>Questions</span><strong>${imported.length}</strong></div>
-    <div class="summary-tile"><span>Skipped</span><strong>${skipped.length}</strong></div>
+    <div class="summary-tile"><span>Available</span><strong>${available.length}</strong></div>
   `;
+  renderExcelWizardStage(sheetInfo, rows, decisions, sheetState);
   excelPreviewRowsEl.innerHTML = decisions
     .filter((item) => item.header || item.decision !== "skip")
     .map((item) => `
       <tr>
         <td>${item.col + 1}</td>
         <td>${escapeHtml(item.header || "-")}</td>
-        <td>${item.decision}</td>
+        <td>${item.importable && sheetState.step === 2 ? `
+          <label class="column-toggle">
+            <input type="checkbox" data-excel-question-col="${item.col}"${item.enabled ? " checked" : ""}>
+            <span>${item.enabled ? "Import" : "Skip"}</span>
+          </label>
+        ` : item.importable ? (item.enabled ? "import" : "skip") : item.decision}</td>
         <td>${escapeHtml(item.reason)}</td>
       </tr>
     `).join("");
-  setSaveStatus(`Previewing ${imported.length} raw mark columns, ${metadata.length} metadata columns, ${skipped.length} skipped columns.`);
+  setSaveStatus(`Excel wizard: ${imported.length} selected question columns, ${metadata.length} metadata columns, ${skipped.length} skipped columns.`);
 }
 
 async function previewXlsxMarkbook(file) {
   try {
     const files = await unzipXlsx(await file.arrayBuffer());
     const sheets = getWorkbookSheets(files);
-    pendingExcelWorkbook = { files, sheets, current: null };
+    pendingExcelWorkbook = { files, sheets, current: null, sheetStates: {} };
     excelSheetSelectEl.innerHTML = sheets.map((sheet, index) => `<option value="${index}">${escapeHtml(sheet.name)}</option>`).join("");
     excelPreviewPanelEl.classList.remove("hidden");
     renderExcelPreview(0);
@@ -1626,26 +1740,26 @@ async function previewXlsxMarkbook(file) {
 
 function applyExcelImport() {
   if (!pendingExcelWorkbook?.current) return;
-  const { rows, decisions } = pendingExcelWorkbook.current;
-  const markColumns = decisions.filter((item) => item.decision === "import");
+  const { rows, decisions, sheetState } = pendingExcelWorkbook.current;
+  const markColumns = decisions.filter((item) => item.enabled);
   if (markColumns.length === 0) {
     setSaveStatus("No raw mark columns selected for Excel import.");
     return;
   }
 
-  const gradeColumn = decisions.find((item) => String(item.header || "").toLowerCase() === "grade");
+  const metadata = sheetState.metadata;
   pushUndo();
   lastImportIssues = [];
   questions = markColumns.map((item, index) => createQuestion(index + 1, String(item.header).trim(), item.max));
   pupils = rows.slice(2)
-    .filter((row) => row?.[0])
+    .filter((row) => row?.[metadata.name])
     .map((row, rowIndex) => ({
       id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${rowIndex}`,
-      name: String(row[0]).trim() || `Pupil ${rowIndex + 1}`,
-      classGroup: String(row[1] || ""),
-      teacher: String(row[2] || ""),
-      grade: gradeColumn ? String(row[gradeColumn.col] || "") : "",
-      scores: markColumns.map((item) => clampImportedMark(row[item.col] ?? "", item.max, `${row[0] || `Pupil ${rowIndex + 1}`} ${item.header}`)),
+      name: String(row[metadata.name]).trim() || `Pupil ${rowIndex + 1}`,
+      classGroup: metadata.classGroup === -1 ? "" : String(row[metadata.classGroup] || ""),
+      teacher: metadata.teacher === -1 ? "" : String(row[metadata.teacher] || ""),
+      grade: metadata.grade === -1 ? "" : String(row[metadata.grade] || ""),
+      scores: markColumns.map((item) => clampImportedMark(row[item.col] ?? "", item.max, `${row[metadata.name] || `Pupil ${rowIndex + 1}`} ${item.header}`)),
       diagnostics: markColumns.map(() => []),
     }));
   selectedPupilId = pupils[0]?.id;
@@ -2040,6 +2154,39 @@ applyCsvMappingButton.addEventListener("click", importCsvWithMapping);
 
 excelSheetSelectEl.addEventListener("change", () => {
   renderExcelPreview(Number(excelSheetSelectEl.value));
+});
+
+excelBackButton.addEventListener("click", () => {
+  if (!pendingExcelWorkbook?.current) return;
+  const { sheetIndex, sheetState } = pendingExcelWorkbook.current;
+  sheetState.step = Math.max(sheetState.step - 1, 0);
+  renderExcelPreview(sheetIndex);
+});
+
+excelNextButton.addEventListener("click", () => {
+  if (!pendingExcelWorkbook?.current) return;
+  const { sheetIndex, sheetState } = pendingExcelWorkbook.current;
+  sheetState.step = Math.min(sheetState.step + 1, 2);
+  renderExcelPreview(sheetIndex);
+});
+
+excelWizardStageEl.addEventListener("change", (event) => {
+  if (!pendingExcelWorkbook?.current) return;
+  const target = event.target;
+  const { sheetIndex, sheetState } = pendingExcelWorkbook.current;
+  if (target.matches("[data-excel-meta]")) {
+    sheetState.metadata[target.dataset.excelMeta] = Number(target.value);
+    renderExcelPreview(sheetIndex);
+  }
+});
+
+excelPreviewRowsEl.addEventListener("change", (event) => {
+  if (!pendingExcelWorkbook?.current) return;
+  const target = event.target;
+  if (!target.matches("[data-excel-question-col]")) return;
+  const { sheetIndex, sheetState } = pendingExcelWorkbook.current;
+  sheetState.questionSelections[Number(target.dataset.excelQuestionCol)] = target.checked;
+  renderExcelPreview(sheetIndex);
 });
 
 applyExcelImportButton.addEventListener("click", applyExcelImport);
