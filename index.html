@@ -199,6 +199,7 @@
                   <th>Question</th>
                   <th>Topic</th>
                   <th>Max</th>
+                  <th>Skills</th>
                   <th>Good comment</th>
                   <th>Average comment</th>
                   <th>Support comment</th>
@@ -251,6 +252,16 @@
           </div>
 
           <div id="cohort-summary" class="summary-grid"></div>
+          <div class="teacher-summary-box">
+            <div class="section-heading compact-heading">
+              <div>
+                <h3>Teacher summary</h3>
+                <p>A short cohort paragraph for department notes, emails, or reteach planning.</p>
+              </div>
+              <button id="copy-teacher-summary" type="button" class="secondary-action">Copy summary</button>
+            </div>
+            <p id="teacher-summary" class="teacher-summary">Enter marks to generate a teacher summary.</p>
+          </div>
 
           <div class="table-wrap compact-wrap">
             <table class="analysis-table">
@@ -328,7 +339,7 @@
 
         <article id="feedback-output" class="feedback-output" aria-live="polite"></article>
         <section class="diagnostics-panel" aria-labelledby="diagnostics-title">
-          <h3 id="diagnostics-title">Question diagnostics</h3>
+          <h3 id="diagnostics-title">Pupil diagnostics</h3>
           <div id="diagnostic-rows" class="diagnostic-rows"></div>
         </section>
       </aside>

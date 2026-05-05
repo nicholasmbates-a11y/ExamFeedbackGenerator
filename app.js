@@ -20,26 +20,36 @@ const diagnosticOptions = {
   units: "Units issue",
   technique: "Exam technique",
 };
+const skillOptions = {
+  definition: "Definition/key words",
+  graph: "Graph interpretation",
+  data: "Data handling",
+  sigfig: "Significant figures",
+  rearranging: "Rearranging equations",
+  extended: "Extended response",
+  command: "Command words",
+  calculationLayout: "Calculation layout",
+};
 const toneOptions = {
   encouraging: {
     openerPrefix: "",
     targetLead: "To improve further",
-    precision: "You could focus on precision: showing full working, using correct units, and checking that written explanations directly answer the command word.",
+    precision: "You could focus on exam precision: interpreting command words carefully, using key words in definitions and written explanations, and setting calculations out clearly with equations, substitutions, units, and final answers.",
   },
   formal: {
     openerPrefix: "Overall, ",
     targetLead: "For further improvement",
-    precision: "You should focus on precision by showing full working, using correct units, and matching explanations closely to the command word.",
+    precision: "You should focus on exam precision by interpreting command words carefully, using key terminology in definitions and written explanations, and laying out calculations clearly with equations, substitutions, units, and final answers.",
   },
   direct: {
     openerPrefix: "",
     targetLead: "Your revision priority is clear",
-    precision: "Focus on showing full working, using correct units, and answering the exact command word.",
+    precision: "Focus on the exact command word, key words in definitions and explanations, and clear calculation layout: equation, substitution, answer, and unit.",
   },
   parent: {
     openerPrefix: "In this assessment, ",
     targetLead: "Next",
-    precision: "You could improve further by showing full working, using correct units, and making written explanations more precise.",
+    precision: "You could improve further by paying closer attention to command words, using key subject vocabulary in definitions and written explanations, and showing calculations in a clear step-by-step layout.",
   },
 };
 const gradeScales = {
@@ -70,6 +80,7 @@ function createQuestion(number, topic, max) {
     number,
     topic,
     max,
+    skills: [],
     comments: createCommentBank(topic),
   };
 }
@@ -77,6 +88,7 @@ function createQuestion(number, topic, max) {
 function cloneQuestions() {
   return defaultQuestions.map((question) => ({
     ...question,
+    skills: [...(question.skills || [])],
     comments: { ...question.comments },
   }));
 }
@@ -110,6 +122,8 @@ const pupilScoreHeadEl = document.querySelector("#pupil-score-head");
 const appShellEl = document.querySelector(".app-shell");
 const feedbackPanelEl = document.querySelector(".feedback-panel");
 const cohortSummaryEl = document.querySelector("#cohort-summary");
+const teacherSummaryEl = document.querySelector("#teacher-summary");
+const copyTeacherSummaryButton = document.querySelector("#copy-teacher-summary");
 const topicAverageRowsEl = document.querySelector("#topic-average-rows");
 const interventionRowsEl = document.querySelector("#intervention-rows");
 const diagnosticAnalysisRowsEl = document.querySelector("#diagnostic-analysis-rows");
@@ -195,6 +209,7 @@ function normaliseQuestion(question, index) {
     number,
     topic,
     max: Math.max(Number(question.max) || 1, 1),
+    skills: Array.isArray(question.skills) ? question.skills.filter((skill) => skillOptions[skill]) : [],
     comments: {
       good: question.comments?.good || fallbackComments.good,
       average: question.comments?.average || fallbackComments.average,
@@ -298,7 +313,27 @@ function applyTone(text, settings) {
 }
 
 function diagnosticPhrase(values) {
-  return values.map((value) => diagnosticOptions[value]?.toLowerCase()).filter(Boolean).join(" and ");
+  const phrases = {
+    calculation: "calculation layout, including clear equations, substitutions, units, and final answers",
+    explanation: "using precise key words in definitions and written explanations",
+    units: "selecting and carrying units consistently through calculations",
+    technique: "interpreting command words and planning answers around the marks available",
+  };
+  return values.map((value) => phrases[value] || diagnosticOptions[value]?.toLowerCase()).filter(Boolean).join(" and ");
+}
+
+function skillPhrase(skill) {
+  const phrases = {
+    definition: "using key words in definitions and written explanations",
+    graph: "interpreting graphs, including gradients, intercepts, trends, and units",
+    data: "handling data, spotting patterns, and using evidence from the question",
+    sigfig: "using suitable significant figures",
+    rearranging: "rearranging equations accurately before substituting values",
+    extended: "structuring extended written responses with linked Physics points",
+    command: "interpreting command words accurately",
+    calculationLayout: "laying calculations out clearly",
+  };
+  return phrases[skill] || skillOptions[skill]?.toLowerCase();
 }
 
 function cloneState() {
@@ -543,6 +578,72 @@ function applyCalculatedGrades() {
   setSaveStatus(`Applied calculated ${getActiveGradeScale().label} grades to ${pupils.length} pupils.`);
 }
 
+function diagnosticResponse(diagnostic) {
+  const responses = {
+    calculation: "Model calculation layout: equation, substitution, rearrangement where needed, final answer, and unit.",
+    explanation: "Use short written-response practice that rewards key Physics vocabulary and command-word precision.",
+    units: "Run a units and prefixes retrieval starter before the next question set.",
+    technique: "Practise reading command words and planning marks before answering.",
+    definition: "Use retrieval practice for definitions, focusing on required mark-scheme key words.",
+    graph: "Use graph questions that require pupils to state gradients, intercepts, trends, units, and physical meaning.",
+    data: "Practise quoting data, identifying anomalies, and linking evidence to conclusions.",
+    sigfig: "Revisit significant figures, rounding only at the final step and checking precision against the data.",
+    rearranging: "Practise rearranging equations symbolically before substituting numbers.",
+    extended: "Model extended responses with linked Physics points and a brief plan before writing.",
+  };
+  return responses[diagnostic] || "Use targeted retrieval and guided exam practice.";
+}
+
+function buildTeacherSummary({ completedAnalyses, cohortAverage, strongestTopic, priorityTopic, diagnosticStats, interventionStats, skillStats }) {
+  if (completedAnalyses.length === 0) {
+    return "Enter marks to generate a teacher-facing cohort summary.";
+  }
+
+  const strongestText = strongestTopic
+    ? `The strongest area is Q${strongestTopic.question.number} (${strongestTopic.question.topic}) at ${strongestTopic.average}%.`
+    : "No clear strongest topic has emerged yet.";
+  const priorityText = priorityTopic
+    ? `The main reteach priority is Q${priorityTopic.question.number} (${priorityTopic.question.topic}) at ${priorityTopic.average}%.`
+    : "No clear reteach priority has emerged yet.";
+  const diagnosticText = diagnosticStats.length > 0
+    ? `The most common exam-skill issue is ${diagnosticOptions[diagnosticStats[0].diagnostic].toLowerCase()}, affecting ${diagnosticStats[0].total} recorded instance${diagnosticStats[0].total === 1 ? "" : "s"}.`
+    : "No common exam-skill diagnostics have been recorded yet.";
+  const skillPriority = skillStats.slice().sort((a, b) => b.priority - a.priority)[0];
+  const skillText = skillPriority && skillPriority.priority > 0
+    ? `Across question-level skills, ${skillPriority.label.toLowerCase()} is the clearest skill priority, with ${skillPriority.priority}/${skillPriority.attempts} tagged attempts below the average threshold.`
+    : "Question-level skills do not yet show a clear whole-cohort weakness.";
+  const interventionText = interventionStats.length > 0
+    ? `Suggested next teaching focus: ${interventionStats[0].question.topic}, especially for the ${interventionStats[0].belowAverageCount} pupil${interventionStats[0].belowAverageCount === 1 ? "" : "s"} below the average threshold.`
+    : "Once more marks are entered, intervention priorities will become clearer.";
+
+  return `Cohort average is ${cohortAverage}% across ${completedAnalyses.length}/${pupils.length} marked pupils. ${strongestText} ${priorityText} ${skillText} ${diagnosticText} ${interventionText}`;
+}
+
+function getQuestionSkillStats() {
+  return Object.entries(skillOptions).map(([skill, label]) => {
+    let attempts = 0;
+    let strong = 0;
+    let priority = 0;
+    questions.forEach((question, questionIndex) => {
+      if (!question.skills?.includes(skill)) return;
+      pupils.forEach((pupil) => {
+        const percentage = getPercentage(parseOptionalNumber(pupil.scores[questionIndex]), Number(question.max));
+        if (percentage === null) return;
+        attempts += 1;
+        if (percentage >= Number(goodThresholdEl.value || 70)) strong += 1;
+        if (percentage < Number(averageThresholdEl.value || 40)) priority += 1;
+      });
+    });
+    return {
+      skill,
+      label,
+      attempts,
+      strong,
+      priority,
+    };
+  }).filter((item) => item.attempts > 0);
+}
+
 function getReportOptions() {
   return {
     grade: reportIncludeGradeEl.checked,
@@ -614,6 +715,33 @@ function gradeFeedbackNudge(analysis) {
   return "The next grade step will come from rebuilding the core knowledge first, then practising short, well-marked questions until the method feels secure.";
 }
 
+function examSkillTarget(analysis) {
+  const diagnostics = new Set(analysis.marked.flatMap((question) => question.diagnostics || []));
+  const targets = [];
+  if (diagnostics.has("technique")) targets.push("pause on each command word so that your answer matches the task, for example describe, explain, calculate, or evaluate");
+  if (diagnostics.has("explanation")) targets.push("include the key Physics words that mark schemes expect in definitions and written explanations");
+  if (diagnostics.has("calculation")) targets.push("set calculations out in a clear sequence: equation, substitution, rearrangement where needed, answer, and unit");
+  if (diagnostics.has("units")) targets.push("carry units through each calculation and check prefixes before giving the final answer");
+
+  if (targets.length === 0) {
+    return "You could also improve exam technique by checking the command word, using key subject vocabulary in written answers, and laying calculations out step by step.";
+  }
+  return `Your exam technique target is to ${formatTopicList(targets)}.`;
+}
+
+function skillPerformanceSummary(questionsToSummarise) {
+  const counts = {};
+  questionsToSummarise.forEach((question) => {
+    (question.skills || []).forEach((skill) => {
+      counts[skill] = (counts[skill] || 0) + 1;
+    });
+  });
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([skill]) => skillPhrase(skill))
+    .filter(Boolean);
+}
+
 function analysePupil(pupil) {
   const marked = questions
     .map((question, index) => {
@@ -621,7 +749,8 @@ function analysePupil(pupil) {
       const max = Number(question.max);
       const percentage = getPercentage(score, max);
       const diagnostics = Array.isArray(pupil.diagnostics?.[index]) ? pupil.diagnostics[index] : [];
-      return { ...question, index, score, max, percentage, band: getBand(percentage), diagnostics };
+      const skills = Array.isArray(question.skills) ? question.skills.filter((skill) => skillOptions[skill]) : [];
+      return { ...question, skills, index, score, max, percentage, band: getBand(percentage), diagnostics };
     })
     .filter((question) => question.percentage !== null);
 
@@ -660,6 +789,14 @@ function buildFeedbackText(pupil) {
   const targetTopics = [...analysis.badTopics, ...analysis.averageTopics].slice(0, 4);
   const secureTopicNames = secureTopics.map((question) => question.topic);
   const targetTopicNames = targetTopics.map((question) => question.topic);
+  const secureSkillNames = skillPerformanceSummary(analysis.goodTopics).slice(0, 3);
+  const targetSkillNames = skillPerformanceSummary(analysis.badTopics).slice(0, 3);
+  const secureSkillSentence = secureSkillNames.length > 0
+    ? `This suggests you are applying skills such as ${formatTopicList(secureSkillNames)} well.`
+    : "";
+  const targetSkillSentence = targetSkillNames.length > 0
+    ? `The marks on these questions suggest you should practise ${formatTopicList(targetSkillNames)}.`
+    : "";
   const strengthDetails = secureTopics
     .slice(0, 2)
     .map((question) => question.comments?.[question.band] || question.comments?.good)
@@ -676,6 +813,7 @@ function buildFeedbackText(pupil) {
     .map((question) => `For ${question.topic}, the main issue was ${diagnosticPhrase(question.diagnostics)}.`)
     .join(" ");
   const gradeNudge = gradeFeedbackNudge(analysis);
+  const examSkills = examSkillTarget(analysis);
 
   if (analysis.marked.length === 0) {
     return {
@@ -686,29 +824,48 @@ function buildFeedbackText(pupil) {
   }
 
   let whatWentWell = secureTopics.length > 0
-    ? `${applyTone(analysis.tone.opener, settings)} You ${analysis.tone.goodVerb} ${formatTopicList(secureTopicNames)}, and you should keep using the strategies that helped you access these questions. ${strengthDetails}`
+    ? `${applyTone(analysis.tone.opener, settings)} You ${analysis.tone.goodVerb} ${formatTopicList(secureTopicNames)}, and you should keep using the strategies that helped you access these questions. ${secureSkillSentence} ${strengthDetails}`
     : `${analysis.tone.opener} ${analysis.tone.fallbackWin}`;
 
   let evenBetterIf = targetTopics.length > 0
-    ? `${toneSetting.targetLead}, you ${analysis.tone.targetVerb} ${formatTopicList(targetTopicNames)}. ${targetDetails} ${diagnosticDetails} You could revisit the key equations, practise explaining the underlying physics in words, and complete exam-style questions with careful attention to command words and units. ${gradeNudge}`
-    : `${toneSetting.targetLead}, ${toneSetting.precision} ${diagnosticDetails} ${gradeNudge}`;
+    ? `${toneSetting.targetLead}, you ${analysis.tone.targetVerb} ${formatTopicList(targetTopicNames)}. ${targetSkillSentence} ${targetDetails} ${diagnosticDetails} You could revisit the key equations, practise explaining the underlying physics with the key words that mark schemes reward, and complete exam-style questions with careful attention to command words and calculation layout. ${examSkills} ${gradeNudge}`
+    : `${toneSetting.targetLead}, ${toneSetting.precision} ${diagnosticDetails} ${examSkills} ${gradeNudge}`;
 
   if (settings.length === "short") {
     whatWentWell = secureTopics.length > 0
-      ? `You showed strength in ${formatTopicList(secureTopicNames)}.`
+      ? `You showed strength in ${formatTopicList(secureTopicNames)}.${secureSkillNames.length > 0 ? ` This also shows confidence with ${formatTopicList(secureSkillNames)}.` : ""}`
       : analysis.tone.fallbackWin;
     evenBetterIf = targetTopics.length > 0
-      ? `You could improve by focusing revision on ${formatTopicList(targetTopicNames)}. ${diagnosticDetails} ${gradeNudge}`
-      : `${toneSetting.precision} ${gradeNudge}`;
+      ? `You could improve by focusing revision on ${formatTopicList(targetTopicNames)}.${targetSkillNames.length > 0 ? ` You should practise ${formatTopicList(targetSkillNames)}.` : ""} ${examSkills} ${diagnosticDetails} ${gradeNudge}`
+      : `${toneSetting.precision} ${examSkills} ${gradeNudge}`;
   }
 
   if (settings.length === "detailed") {
     const comparison = analysis.overallPercentage === null ? "" : `Your overall score was ${analysis.overallPercentage}%, so the most useful next step is to connect revision to the question types where marks were lost.`;
     whatWentWell = `${whatWentWell} ${comparison}`;
-    evenBetterIf = `${evenBetterIf} After revising each priority topic, complete a timed exam question, mark it against the scheme, and rewrite one explanation using precise physics vocabulary.`;
+    evenBetterIf = `${evenBetterIf} After revising each priority topic, complete a timed exam question, mark it against the scheme, annotate the command word, and rewrite one explanation using precise Physics vocabulary and a clear calculation layout where relevant.`;
   }
 
   return { analysis, whatWentWell, evenBetterIf };
+}
+
+function renderQuestionSkillControls(question, index) {
+  return `
+    <fieldset class="skill-checklist">
+      <legend>Question skills</legend>
+      ${Object.entries(skillOptions).map(([value, label]) => `
+        <label>
+          <input
+            type="checkbox"
+            data-question-skill="${value}"
+            data-question-index="${index}"
+            ${question.skills?.includes(value) ? "checked" : ""}
+          >
+          <span>${label}</span>
+        </label>
+      `).join("")}
+    </fieldset>
+  `;
 }
 
 function renderTopicRows() {
@@ -721,6 +878,7 @@ function renderTopicRows() {
       <td>
         <input type="number" min="1" data-topic-field="max" data-question-index="${index}" value="${question.max}" aria-label="Question ${question.number} maximum mark">
       </td>
+      <td>${renderQuestionSkillControls(question, index)}</td>
       <td>
         <textarea data-comment-field="good" data-question-index="${index}" aria-label="Question ${question.number} good comment">${escapeHtml(question.comments.good)}</textarea>
       </td>
@@ -816,6 +974,7 @@ function renderCohortAnalysis() {
   const pupilAnalyses = pupils.map(analysePupil);
   const completedAnalyses = pupilAnalyses.filter((analysis) => analysis.overallPercentage !== null);
   const cohortAverage = average(completedAnalyses.map((analysis) => analysis.overallPercentage));
+  const skillStats = getQuestionSkillStats();
   const strongestTopic = topicStats
     .filter((stat) => stat.average !== null)
     .slice()
@@ -921,23 +1080,25 @@ function renderCohortAnalysis() {
   diagnosticAnalysisRowsEl.innerHTML = diagnosticStats.length === 0
     ? '<tr><td colspan="4">No diagnostics recorded yet.</td></tr>'
     : diagnosticStats.map((item) => {
-      const response = item.diagnostic === "calculation"
-        ? "Model multi-step working and require equation, substitution, answer, unit."
-        : item.diagnostic === "explanation"
-          ? "Use short written-response practice with command-word annotation."
-          : item.diagnostic === "units"
-            ? "Run a units and prefixes retrieval starter before the next question set."
-            : "Practise reading command words and planning marks before answering.";
-
       return `
         <tr>
           <td>${diagnosticOptions[item.diagnostic]}</td>
           <td>${item.total}</td>
           <td>Q${item.mostAffected.question.number}: ${escapeHtml(item.mostAffected.question.topic)} (${item.mostAffected.count})</td>
-          <td>${response}</td>
+          <td>${diagnosticResponse(item.diagnostic)}</td>
         </tr>
       `;
     }).join("");
+
+  teacherSummaryEl.textContent = buildTeacherSummary({
+    completedAnalyses,
+    cohortAverage,
+    strongestTopic,
+    priorityTopic,
+    diagnosticStats,
+    interventionStats,
+    skillStats,
+  });
 
   const groups = new Map();
   pupils.forEach((pupil) => {
@@ -996,11 +1157,12 @@ function renderSelectedFeedback() {
   const topicBreakdown = analysis.marked.length > 0
     ? analysis.marked.map((question) => {
       const cohortAverage = topicStats[question.index]?.average;
+      const skillText = question.skills?.length ? ` · Skills: ${question.skills.map((skill) => skillOptions[skill]).join(", ")}` : "";
       return `
       <li>
         <span>${escapeHtml(question.topic)}</span>
         <strong class="${question.band}">${question.band}</strong>
-        <small>Cohort avg ${cohortAverage === null ? "-" : `${cohortAverage}%`}</small>
+        <small>Cohort avg ${cohortAverage === null ? "-" : `${cohortAverage}%`}${escapeHtml(skillText)}</small>
       </li>
     `;
     }).join("")
@@ -1203,6 +1365,7 @@ function deletePupil(index) {
 
 topicRowsEl.addEventListener("input", (event) => {
   const input = event.target;
+  if (input.matches("[data-question-skill]")) return;
   const index = Number(input.dataset.questionIndex);
   const field = input.dataset.topicField;
   const commentField = input.dataset.commentField;
@@ -1236,6 +1399,24 @@ topicRowsEl.addEventListener("input", (event) => {
     });
   }
 
+  updatePupilOutputs();
+});
+
+topicRowsEl.addEventListener("change", (event) => {
+  const checkbox = event.target.closest("[data-question-skill]");
+  if (!checkbox) return;
+
+  const index = Number(checkbox.dataset.questionIndex);
+  const skill = checkbox.dataset.questionSkill;
+  if (!Number.isInteger(index) || !skillOptions[skill]) return;
+
+  const current = new Set(questions[index].skills || []);
+  if (checkbox.checked) {
+    current.add(skill);
+  } else {
+    current.delete(skill);
+  }
+  questions[index].skills = [...current].filter((value) => skillOptions[value]);
   updatePupilOutputs();
 });
 
@@ -1600,6 +1781,7 @@ function printReportPack(reportPupils = pupils, titleSuffix = "") {
         <tr>
           <td>Q${question.number}</td>
           <td>${escapeHtml(question.topic)}</td>
+          <td>${question.skills?.length ? escapeHtml(question.skills.map((skill) => skillOptions[skill]).join(", ")) : "-"}</td>
           <td>${question.percentage}%</td>
           <td>${question.band}</td>
           ${options.cohortAverage ? `<td>${cohortAverageCell(question)}</td>` : ""}
@@ -1616,8 +1798,8 @@ function printReportPack(reportPupils = pupils, titleSuffix = "") {
           <h3>Even better if</h3>
           <p>${escapeHtml(feedback.evenBetterIf)}</p>
           ${options.topicTable ? `<table>
-            <thead><tr><th>Question</th><th>Topic</th><th>%</th><th>Band</th>${options.cohortAverage ? "<th>Cohort avg</th>" : ""}${options.diagnostics ? "<th>Diagnostics</th>" : ""}</tr></thead>
-            <tbody>${breakdownRows || `<tr><td colspan="${4 + (options.cohortAverage ? 1 : 0) + (options.diagnostics ? 1 : 0)}">No marks entered.</td></tr>`}</tbody>
+            <thead><tr><th>Question</th><th>Topic</th><th>Skills</th><th>%</th><th>Band</th>${options.cohortAverage ? "<th>Cohort avg</th>" : ""}${options.diagnostics ? "<th>Diagnostics</th>" : ""}</tr></thead>
+            <tbody>${breakdownRows || `<tr><td colspan="${5 + (options.cohortAverage ? 1 : 0) + (options.diagnostics ? 1 : 0)}">No marks entered.</td></tr>`}</tbody>
           </table>` : ""}
         </section>
       `;
@@ -1647,6 +1829,10 @@ function exportDepartmentSummary() {
   const body = `
     <h1>${escapeHtml(title)}</h1>
     <p class="meta">Generated ${new Date().toLocaleString()} · Cohort average ${cohortAverage === null ? "-" : `${cohortAverage}%`} · ${pupilAnalyses.length}/${pupils.length} pupils marked</p>
+    <section>
+      <h2>Teacher Summary</h2>
+      <p>${escapeHtml(teacherSummaryEl.textContent || "No teacher summary generated.")}</p>
+    </section>
     <section>
       <h2>Topic Averages</h2>
       <table><thead><tr><th>Question</th><th>Topic</th><th>Average</th><th>Entries</th><th>Band</th></tr></thead><tbody>${topicRows}</tbody></table>
@@ -2239,11 +2425,12 @@ function importExamStructure(text) {
 
   const headers = rows[0].map((header) => header.trim().toLowerCase());
   const questionIndex = headers.findIndex((header) => ["question", "q", "number"].includes(header));
-  const topicIndex = headers.findIndex((header) => ["topic", "content", "skill"].includes(header));
+  const topicIndex = headers.findIndex((header) => ["topic", "content"].includes(header));
   const maxIndex = headers.findIndex((header) => ["max", "marks", "maximum", "max marks"].includes(header));
   const goodIndex = headers.findIndex((header) => ["good comment", "good"].includes(header));
   const averageIndex = headers.findIndex((header) => ["average comment", "average"].includes(header));
   const badIndex = headers.findIndex((header) => ["support comment", "bad comment", "bad", "support"].includes(header));
+  const skillsIndex = headers.findIndex((header) => ["skill", "skills", "question skills", "exam skills"].includes(header));
 
   if (topicIndex === -1 || maxIndex === -1) {
     setSaveStatus("Structure headers should include Topic and Max.");
@@ -2259,6 +2446,11 @@ function importExamStructure(text) {
       average: row[averageIndex]?.trim() || question.comments.average,
       bad: row[badIndex]?.trim() || question.comments.bad,
     };
+    question.skills = skillsIndex === -1 ? [] : String(row[skillsIndex] || "")
+      .split(/[;,]/)
+      .map((item) => item.trim().toLowerCase())
+      .map((item) => Object.entries(skillOptions).find(([value, label]) => item === value || item === label.toLowerCase())?.[0])
+      .filter(Boolean);
     return question;
   });
 
@@ -2302,6 +2494,10 @@ copyAllButton.addEventListener("click", () => {
 copyFilteredFeedbackButton.addEventListener("click", () => {
   const filteredPupils = getFilteredPupils();
   copyText(filteredPupils.map(plainFeedbackForPupil).join("\n\n---\n\n"), copyFilteredFeedbackButton);
+});
+
+copyTeacherSummaryButton.addEventListener("click", () => {
+  copyText(teacherSummaryEl.textContent || "", copyTeacherSummaryButton);
 });
 
 printFilteredReportsButton.addEventListener("click", () => {

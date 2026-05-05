@@ -355,6 +355,25 @@ table {
   margin-top: 14px;
 }
 
+.teacher-summary-box {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 14px;
+  padding: 14px;
+  background: #f8fbfc;
+}
+
+.compact-heading h3 {
+  margin: 0;
+  line-height: 1.15;
+}
+
+.teacher-summary {
+  margin: 12px 0 0;
+  color: #26313d;
+  line-height: 1.55;
+}
+
 th,
 td {
   border-bottom: 1px solid var(--line);
@@ -494,6 +513,40 @@ td:first-child,
 .diagnostic-rows span {
   color: var(--muted);
   font-weight: 700;
+}
+
+.skill-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 0;
+  min-width: 300px;
+  padding: 8px;
+}
+
+.skill-checklist legend {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+  padding: 0 4px;
+  text-transform: uppercase;
+}
+
+.skill-checklist label {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.skill-checklist input {
+  width: 16px;
+  height: 16px;
 }
 
 .validation-list {
@@ -783,7 +836,7 @@ td:first-child,
 
 .topic-breakdown small {
   color: var(--muted);
-  white-space: nowrap;
+  line-height: 1.35;
 }
 
 .topic-breakdown .good {
