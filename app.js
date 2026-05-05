@@ -42,6 +42,20 @@ const toneOptions = {
     precision: "You could improve further by showing full working, using correct units, and making written explanations more precise.",
   },
 };
+const gradeScales = {
+  alevel: {
+    label: "A level",
+    grades: ["A*", "A", "B", "C", "D", "E"],
+    defaults: { "A*": 90, A: 80, B: 70, C: 60, D: 50, E: 40 },
+    zScores: { "A*": 1.35, A: 0.75, B: 0.25, C: -0.25, D: -0.75, E: -1.25 },
+  },
+  gcse: {
+    label: "GCSE",
+    grades: ["9", "8", "7", "6", "5", "4", "3", "2", "1"],
+    defaults: { 9: 85, 8: 75, 7: 65, 6: 55, 5: 45, 4: 35, 3: 25, 2: 15, 1: 5 },
+    zScores: { 9: 1.55, 8: 1.05, 7: 0.6, 6: 0.2, 5: -0.2, 4: -0.6, 3: -1, 2: -1.4, 1: -1.8 },
+  },
+};
 
 function createCommentBank(topic) {
   return {
@@ -104,6 +118,10 @@ const goodThresholdEl = document.querySelector("#good-threshold");
 const averageThresholdEl = document.querySelector("#average-threshold");
 const feedbackLengthEl = document.querySelector("#feedback-length");
 const feedbackToneEl = document.querySelector("#feedback-tone");
+const gradeScaleEl = document.querySelector("#grade-scale");
+const gradeBoundaryGridEl = document.querySelector("#grade-boundary-grid");
+const suggestGradeBoundariesButton = document.querySelector("#suggest-grade-boundaries");
+const applyCalculatedGradesButton = document.querySelector("#apply-calculated-grades");
 const validationListEl = document.querySelector("#validation-list");
 const feedbackOutputEl = document.querySelector("#feedback-output");
 const toggleFeedbackButton = document.querySelector("#toggle-feedback");
@@ -361,6 +379,98 @@ function getFilteredPupils() {
   return pupils.filter(pupilMatchesFilter);
 }
 
+function getActiveGradeScale() {
+  return gradeScales[gradeScaleEl.value] || gradeScales.alevel;
+}
+
+function renderGradeBoundaries() {
+  const scale = getActiveGradeScale();
+  gradeBoundaryGridEl.innerHTML = scale.grades.map((grade) => `
+    <label>
+      ${escapeHtml(grade)}
+      <span><input data-grade-boundary="${escapeHtml(grade)}" type="number" min="0" max="100" value="${scale.defaults[grade]}">%</span>
+    </label>
+  `).join("");
+}
+
+function getGradeBoundaryInput(grade) {
+  return [...gradeBoundaryGridEl.querySelectorAll("[data-grade-boundary]")]
+    .find((input) => input.dataset.gradeBoundary === grade);
+}
+
+function getGradeSettings() {
+  const scale = getActiveGradeScale();
+  const boundaries = {};
+  scale.grades.forEach((grade) => {
+    const input = getGradeBoundaryInput(grade);
+    boundaries[grade] = Math.min(Math.max(Number(input?.value) || 0, 0), 100);
+  });
+  return {
+    scale: gradeScaleEl.value,
+    boundaries,
+  };
+}
+
+function applyGradeSettings(settings = {}) {
+  if (settings.scale && gradeScales[settings.scale]) gradeScaleEl.value = settings.scale;
+  renderGradeBoundaries();
+  const scale = getActiveGradeScale();
+  scale.grades.forEach((grade) => {
+    const input = getGradeBoundaryInput(grade);
+    if (input && settings.boundaries?.[grade] !== undefined) input.value = settings.boundaries[grade];
+  });
+}
+
+function gradeForPercentage(percentage) {
+  if (percentage === null) return "";
+  const { boundaries } = getGradeSettings();
+  const scale = getActiveGradeScale();
+  const sortedGrades = scale.grades
+    .map((grade) => ({ grade, boundary: Number(boundaries[grade]) || 0 }))
+    .sort((a, b) => b.boundary - a.boundary);
+  const match = sortedGrades.find((item) => percentage >= item.boundary);
+  return match?.grade || "U";
+}
+
+function completedPercentages() {
+  return pupils
+    .map((pupil) => analysePupil(pupil).overallPercentage)
+    .filter((percentage) => percentage !== null);
+}
+
+function suggestGradeBoundaries() {
+  const percentages = completedPercentages();
+  if (percentages.length < 3) {
+    setSaveStatus("Enter marks for at least 3 pupils before suggesting grade boundaries.");
+    return;
+  }
+
+  const mean = average(percentages);
+  const variance = percentages.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / percentages.length;
+  const standardDeviation = Math.max(Math.sqrt(variance), 8);
+  const scale = getActiveGradeScale();
+  scale.grades.forEach((grade) => {
+    const input = getGradeBoundaryInput(grade);
+    if (!input) return;
+    input.value = Math.min(Math.max(Math.round(mean + (standardDeviation * scale.zScores[grade])), 0), 100);
+  });
+  updatePupilOutputs();
+  setSaveStatus(`Suggested ${scale.label} boundaries from the cohort average (${mean}%) and spread.`);
+}
+
+function applyCalculatedGrades() {
+  pushUndo();
+  pupils = pupils.map((pupil) => {
+    const calculatedGrade = gradeForPercentage(analysePupil(pupil).overallPercentage);
+    return {
+      ...pupil,
+      grade: calculatedGrade || pupil.grade,
+    };
+  });
+  rerenderAll();
+  setSaveStatus(`Applied calculated ${getActiveGradeScale().label} grades to ${pupils.length} pupils.`);
+}
+
 function toneForOverall(percentage) {
   if (percentage === null) {
     return {
@@ -416,6 +526,7 @@ function analysePupil(pupil) {
     return {
       marked,
       overallPercentage: null,
+      calculatedGrade: "",
       tone: toneForOverall(null),
       goodTopics: [],
       averageTopics: [],
@@ -430,6 +541,7 @@ function analysePupil(pupil) {
   return {
     marked,
     overallPercentage,
+    calculatedGrade: gradeForPercentage(overallPercentage),
     tone: toneForOverall(overallPercentage),
     goodTopics: marked.filter((question) => question.band === "good"),
     averageTopics: marked.filter((question) => question.band === "average"),
@@ -543,6 +655,7 @@ function renderPupilRows() {
     if (!filteredIndexes.has(pupilIndex)) return "";
     const analysis = analysePupil(pupil);
     const percentageText = analysis.overallPercentage === null ? "-" : `${analysis.overallPercentage}%`;
+    const calculatedGrade = analysis.calculatedGrade || "";
     const selectedClass = pupil.id === selectedPupilId ? " selected-row" : "";
     const scoreCells = questions.map((question, questionIndex) => {
       const percentage = getPercentage(parseOptionalNumber(pupil.scores[questionIndex]), Number(question.max));
@@ -580,7 +693,7 @@ function renderPupilRows() {
         <td data-pupil-output="percentage" data-pupil-index="${pupilIndex}">${percentageText}</td>
         <td data-pupil-output="band" data-pupil-index="${pupilIndex}">${analysis.overallPercentage === null ? "-" : analysis.tone.label}</td>
         <td>
-          <input class="grade-input" data-pupil-index="${pupilIndex}" data-pupil-field="grade" value="${escapeHtml(pupil.grade)}" aria-label="${escapeHtml(pupil.name)} grade">
+          <input class="grade-input" data-pupil-index="${pupilIndex}" data-pupil-field="grade" value="${escapeHtml(pupil.grade)}" placeholder="${escapeHtml(calculatedGrade || "-")}" title="Calculated grade: ${escapeHtml(calculatedGrade || "-")}" aria-label="${escapeHtml(pupil.name)} grade">
         </td>
         <td>
           <button type="button" class="small-action" data-select-pupil="${pupilIndex}">View</button>
@@ -791,7 +904,7 @@ function renderSelectedFeedback() {
 
   selectedPupilNameEl.textContent = pupil.name;
   overallScoreEl.textContent = analysis.overallPercentage === null ? "0%" : `${analysis.overallPercentage}%`;
-  overallBandEl.textContent = analysis.tone.label;
+  overallBandEl.textContent = analysis.calculatedGrade ? `${analysis.tone.label} · ${analysis.calculatedGrade}` : analysis.tone.label;
   feedbackOutputEl.innerHTML = `
     <section>
       <h3>What went well</h3>
@@ -847,12 +960,16 @@ function getValidationWarnings() {
     !question.comments.good.trim() || !question.comments.average.trim() || !question.comments.bad.trim()
   )).length;
   const invalidThresholds = Number(averageThresholdEl.value) >= Number(goodThresholdEl.value);
+  const gradeSettings = getGradeSettings();
+  const gradeBoundaries = getActiveGradeScale().grades.map((grade) => gradeSettings.boundaries[grade]);
+  const invalidGradeBoundaries = gradeBoundaries.some((boundary, index) => index > 0 && boundary >= gradeBoundaries[index - 1]);
 
   if (blankNames > 0) warnings.push(`${blankNames} pupil name${blankNames === 1 ? " is" : "s are"} blank.`);
   if (blankTopics > 0) warnings.push(`${blankTopics} topic name${blankTopics === 1 ? " is" : "s are"} blank.`);
   if (missingMarks > 0) warnings.push(`${missingMarks} mark cell${missingMarks === 1 ? " is" : "s are"} empty across ${incompletePupils} pupil${incompletePupils === 1 ? "" : "s"}.`);
   if (emptyComments > 0) warnings.push(`${emptyComments} question${emptyComments === 1 ? " has" : "s have"} an empty comment-bank field.`);
   if (invalidThresholds) warnings.push("Average threshold should be lower than the good threshold.");
+  if (invalidGradeBoundaries) warnings.push("Grade boundaries should descend from the highest grade to the lowest grade.");
   if (questions.length === 0) warnings.push("At least one question is needed.");
   lastImportIssues.slice(0, 8).forEach((issue) => warnings.push(issue));
   if (lastImportIssues.length > 8) warnings.push(`${lastImportIssues.length - 8} more import issue${lastImportIssues.length - 8 === 1 ? "" : "s"} not shown.`);
@@ -872,9 +989,14 @@ function updatePupilOutputs() {
     const analysis = analysePupil(pupil);
     const percentageCell = pupilRowsEl.querySelector(`[data-pupil-output="percentage"][data-pupil-index="${pupilIndex}"]`);
     const bandCell = pupilRowsEl.querySelector(`[data-pupil-output="band"][data-pupil-index="${pupilIndex}"]`);
+    const gradeInput = pupilRowsEl.querySelector(`[data-pupil-field="grade"][data-pupil-index="${pupilIndex}"]`);
 
     if (percentageCell) percentageCell.textContent = analysis.overallPercentage === null ? "-" : `${analysis.overallPercentage}%`;
     if (bandCell) bandCell.textContent = analysis.overallPercentage === null ? "-" : analysis.tone.label;
+    if (gradeInput) {
+      gradeInput.placeholder = analysis.calculatedGrade || "-";
+      gradeInput.title = `Calculated grade: ${analysis.calculatedGrade || "-"}`;
+    }
 
     questions.forEach((question, questionIndex) => {
       const scoreInput = pupilRowsEl.querySelector(`[data-pupil-index="${pupilIndex}"][data-score-index="${questionIndex}"]`);
@@ -1112,6 +1234,16 @@ diagnosticRowsEl.addEventListener("change", (event) => {
   input.addEventListener("change", updatePupilOutputs);
 });
 
+gradeScaleEl.addEventListener("change", () => {
+  renderGradeBoundaries();
+  updatePupilOutputs();
+});
+
+gradeBoundaryGridEl.addEventListener("input", updatePupilOutputs);
+gradeBoundaryGridEl.addEventListener("change", updatePupilOutputs);
+suggestGradeBoundariesButton.addEventListener("click", suggestGradeBoundaries);
+applyCalculatedGradesButton.addEventListener("click", applyCalculatedGrades);
+
 resetButton.addEventListener("click", () => {
   pushUndo();
   questions = cloneQuestions();
@@ -1227,6 +1359,7 @@ function getTemplateState() {
       good: goodThresholdEl.value,
       average: averageThresholdEl.value,
     },
+    grading: getGradeSettings(),
     feedback: getFeedbackSettings(),
   };
 }
@@ -1238,6 +1371,7 @@ function applyTemplateState(template) {
   pupils = pupils.map(normalisePupil);
   if (template.thresholds?.good) goodThresholdEl.value = template.thresholds.good;
   if (template.thresholds?.average) averageThresholdEl.value = template.thresholds.average;
+  applyGradeSettings(template.grading);
   if (template.feedback?.length) feedbackLengthEl.value = template.feedback.length;
   if (template.feedback?.tone) feedbackToneEl.value = template.feedback.tone;
   rerenderAll();
@@ -1253,6 +1387,7 @@ function getAppState() {
       good: goodThresholdEl.value,
       average: averageThresholdEl.value,
     },
+    grading: getGradeSettings(),
     feedback: getFeedbackSettings(),
   };
 }
@@ -1271,6 +1406,7 @@ function applyAppState(state) {
 
   if (state.thresholds?.good) goodThresholdEl.value = state.thresholds.good;
   if (state.thresholds?.average) averageThresholdEl.value = state.thresholds.average;
+  applyGradeSettings(state.grading);
   if (state.feedback?.length) feedbackLengthEl.value = state.feedback.length;
   if (state.feedback?.tone) feedbackToneEl.value = state.feedback.tone;
 
@@ -1339,7 +1475,7 @@ function printReportPack(reportPupils = pupils, titleSuffix = "") {
       return `
         <section class="pupil-report">
           <h2>${escapeHtml(pupil.name)}</h2>
-          <p class="meta">Class: ${escapeHtml(pupil.classGroup || "-")} · Teacher: ${escapeHtml(pupil.teacher || "-")} · Grade: ${escapeHtml(pupil.grade || "-")} · Overall: ${analysis.overallPercentage === null ? "No marks yet" : `${analysis.overallPercentage}%`} · ${escapeHtml(analysis.tone.label)}</p>
+          <p class="meta">Class: ${escapeHtml(pupil.classGroup || "-")} · Teacher: ${escapeHtml(pupil.teacher || "-")} · Grade: ${escapeHtml(pupil.grade || analysis.calculatedGrade || "-")} · Overall: ${analysis.overallPercentage === null ? "No marks yet" : `${analysis.overallPercentage}%`} · ${escapeHtml(analysis.tone.label)}</p>
           <h3>What went well</h3>
           <p>${escapeHtml(feedback.whatWentWell)}</p>
           <h3>Even better if</h3>
@@ -1792,7 +1928,7 @@ function exportCsv() {
       ...questions.map((_, index) => (pupil.diagnostics?.[index] || []).map((value) => diagnosticOptions[value]).join("; ")),
       feedback.analysis.overallPercentage ?? "",
       feedback.analysis.overallPercentage === null ? "" : feedback.analysis.tone.label,
-      pupil.grade,
+      pupil.grade || feedback.analysis.calculatedGrade,
       `${feedback.whatWentWell}\n\n${feedback.evenBetterIf}`,
     ];
   });
@@ -2000,8 +2136,9 @@ function importExamStructure(text) {
 function plainFeedbackForPupil(pupil) {
   const feedback = buildFeedbackText(pupil);
   const percentage = feedback.analysis.overallPercentage === null ? "No marks yet" : `${feedback.analysis.overallPercentage}%`;
+  const grade = pupil.grade || feedback.analysis.calculatedGrade || "-";
 
-  return `${pupil.name} (${percentage})
+  return `${pupil.name} (${percentage}, grade ${grade})
 
 What went well
 ${feedback.whatWentWell}
@@ -2202,6 +2339,7 @@ structureFileInput.addEventListener("change", async () => {
 });
 
 undoChangeButton.disabled = true;
+renderGradeBoundaries();
 renderSavedSlots();
 renderTemplateSlots();
 rerenderAll();

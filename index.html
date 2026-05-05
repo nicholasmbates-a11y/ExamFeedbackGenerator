@@ -67,6 +67,25 @@
           </div>
         </section>
 
+        <section class="panel grading-panel" aria-labelledby="grading-title">
+          <div>
+            <h2 id="grading-title">Grades</h2>
+            <p>Choose a grading scale, edit the lower boundary for each grade, or suggest boundaries from the cohort distribution.</p>
+          </div>
+          <div class="grading-controls">
+            <label>
+              Grade scale
+              <select id="grade-scale">
+                <option value="alevel">A level (A*-E)</option>
+                <option value="gcse">GCSE (9-1)</option>
+              </select>
+            </label>
+            <button id="suggest-grade-boundaries" type="button" class="secondary-action">Suggest boundaries</button>
+            <button id="apply-calculated-grades" type="button" class="primary-action">Apply grades</button>
+          </div>
+          <div id="grade-boundary-grid" class="grade-boundary-grid"></div>
+        </section>
+
         <section class="panel controls-panel" aria-labelledby="templates-title">
           <div>
             <h2 id="templates-title">Templates</h2>

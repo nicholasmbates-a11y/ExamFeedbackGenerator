@@ -150,6 +150,39 @@ textarea {
   gap: 18px;
 }
 
+.grading-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.grading-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.grading-controls label,
+.grade-boundary-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.grade-boundary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(86px, 1fr));
+  gap: 10px;
+}
+
+.grade-boundary-grid span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink);
+}
+
 .threshold-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(130px, 1fr));
@@ -736,7 +769,9 @@ td:first-child,
   .template-controls,
   .mapping-grid,
   .cohort-tools,
-  .wizard-grid {
+  .wizard-grid,
+  .grading-controls,
+  .grade-boundary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -818,6 +853,8 @@ td:first-child,
   .mapping-grid,
   .cohort-tools,
   .wizard-grid,
+  .grading-controls,
+  .grade-boundary-grid,
   .import-steps {
     grid-template-columns: 1fr;
   }
