@@ -219,19 +219,15 @@
           </div>
 
           <div class="table-wrap">
-            <table>
+            <table class="structure-table">
               <thead>
                 <tr>
                   <th>Question</th>
-                  <th>Topic</th>
-                  <th>Unit/group</th>
-                  <th>Type</th>
+                  <th>Question details</th>
                   <th>Max</th>
                   <th>Skills</th>
                   <th>Mark note</th>
-                  <th>Good comment</th>
-                  <th>Average comment</th>
-                  <th>Support comment</th>
+                  <th>Comment bank</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -324,8 +320,13 @@
             <p id="teacher-summary" class="teacher-summary">Enter marks to generate a teacher summary.</p>
           </div>
 
-          <div class="table-wrap compact-wrap">
-            <table class="analysis-table">
+          <div class="analysis-block" data-analysis-block>
+            <div class="analysis-block-header">
+              <h3>Class/group analysis</h3>
+              <button type="button" class="secondary-action small-action" data-analysis-toggle>Hide</button>
+            </div>
+            <div class="table-wrap compact-wrap" data-analysis-content>
+              <table class="analysis-table">
               <thead>
                 <tr>
                   <th>Class/group</th>
@@ -336,10 +337,16 @@
               </thead>
               <tbody id="class-analysis-rows"></tbody>
             </table>
+            </div>
           </div>
 
-          <div class="table-wrap compact-wrap">
-            <table class="analysis-table">
+          <div class="analysis-block" data-analysis-block>
+            <div class="analysis-block-header">
+              <h3>Teacher analysis</h3>
+              <button type="button" class="secondary-action small-action" data-analysis-toggle>Hide</button>
+            </div>
+            <div class="table-wrap compact-wrap" data-analysis-content>
+              <table class="analysis-table">
               <thead>
                 <tr>
                   <th>Teacher</th>
@@ -350,10 +357,16 @@
               </thead>
               <tbody id="teacher-analysis-rows"></tbody>
             </table>
+            </div>
           </div>
 
-          <div class="table-wrap compact-wrap">
-            <table class="analysis-table">
+          <div class="analysis-block" data-analysis-block>
+            <div class="analysis-block-header">
+              <h3>Unit/group averages</h3>
+              <button type="button" class="secondary-action small-action" data-analysis-toggle>Hide</button>
+            </div>
+            <div class="table-wrap compact-wrap" data-analysis-content>
+              <table class="analysis-table">
               <thead>
                 <tr>
                   <th>Unit/group</th>
@@ -365,10 +378,16 @@
               </thead>
               <tbody id="group-average-rows"></tbody>
             </table>
+            </div>
           </div>
 
-          <div class="table-wrap compact-wrap">
-            <table class="analysis-table">
+          <div class="analysis-block is-collapsed" data-analysis-block>
+            <div class="analysis-block-header">
+              <h3>Question averages</h3>
+              <button type="button" class="secondary-action small-action" data-analysis-toggle>Show</button>
+            </div>
+            <div class="table-wrap compact-wrap" data-analysis-content>
+              <table class="analysis-table">
               <thead>
                 <tr>
                   <th>Question</th>
@@ -380,10 +399,16 @@
               </thead>
               <tbody id="topic-average-rows"></tbody>
             </table>
+            </div>
           </div>
 
-          <div class="table-wrap compact-wrap">
-            <table class="analysis-table">
+          <div class="analysis-block" data-analysis-block>
+            <div class="analysis-block-header">
+              <h3>Question type averages</h3>
+              <button type="button" class="secondary-action small-action" data-analysis-toggle>Hide</button>
+            </div>
+            <div class="table-wrap compact-wrap" data-analysis-content>
+              <table class="analysis-table">
               <thead>
                 <tr>
                   <th>Question type</th>
@@ -395,10 +420,16 @@
               </thead>
               <tbody id="type-average-rows"></tbody>
             </table>
+            </div>
           </div>
 
-          <div class="table-wrap compact-wrap">
-            <table class="analysis-table">
+          <div class="analysis-block" data-analysis-block>
+            <div class="analysis-block-header">
+              <h3>Skill analysis</h3>
+              <button type="button" class="secondary-action small-action" data-analysis-toggle>Hide</button>
+            </div>
+            <div class="table-wrap compact-wrap" data-analysis-content>
+              <table class="analysis-table">
               <thead>
                 <tr>
                   <th>Skill</th>
@@ -410,10 +441,16 @@
               </thead>
               <tbody id="skill-analysis-rows"></tbody>
             </table>
+            </div>
           </div>
 
-          <div class="table-wrap compact-wrap">
-            <table class="analysis-table">
+          <div class="analysis-block is-collapsed" data-analysis-block>
+            <div class="analysis-block-header">
+              <h3>Intervention priorities</h3>
+              <button type="button" class="secondary-action small-action" data-analysis-toggle>Show</button>
+            </div>
+            <div class="table-wrap compact-wrap" data-analysis-content>
+              <table class="analysis-table">
               <thead>
                 <tr>
                   <th>Rank</th>
@@ -425,10 +462,16 @@
               </thead>
               <tbody id="intervention-rows"></tbody>
             </table>
+            </div>
           </div>
 
-          <div class="table-wrap compact-wrap">
-            <table class="analysis-table">
+          <div class="analysis-block" data-analysis-block>
+            <div class="analysis-block-header">
+              <h3>Diagnostic summary</h3>
+              <button type="button" class="secondary-action small-action" data-analysis-toggle>Hide</button>
+            </div>
+            <div class="table-wrap compact-wrap" data-analysis-content>
+              <table class="analysis-table">
               <thead>
                 <tr>
                   <th>Diagnostic</th>
@@ -439,10 +482,29 @@
               </thead>
               <tbody id="diagnostic-analysis-rows"></tbody>
             </table>
+            </div>
           </div>
 
-          <div class="table-wrap compact-wrap">
-            <table class="analysis-table">
+          <div class="analysis-block" data-analysis-block>
+            <div class="analysis-block-header">
+              <h3>Diagnostic heatmap</h3>
+              <button type="button" class="secondary-action small-action" data-analysis-toggle>Hide</button>
+            </div>
+            <div class="table-wrap compact-wrap" data-analysis-content>
+              <table class="analysis-table diagnostic-heatmap-table">
+                <thead id="diagnostic-heatmap-head"></thead>
+                <tbody id="diagnostic-heatmap-rows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="analysis-block is-collapsed" data-analysis-block>
+            <div class="analysis-block-header">
+              <h3>Intervention groups</h3>
+              <button type="button" class="secondary-action small-action" data-analysis-toggle>Show</button>
+            </div>
+            <div class="table-wrap compact-wrap" data-analysis-content>
+              <table class="analysis-table">
               <thead>
                 <tr>
                   <th>Group</th>
@@ -452,6 +514,7 @@
               </thead>
               <tbody id="intervention-group-rows"></tbody>
             </table>
+            </div>
           </div>
         </section>
       </section>

@@ -179,6 +179,8 @@ const typeAverageRowsEl = document.querySelector("#type-average-rows");
 const skillAnalysisRowsEl = document.querySelector("#skill-analysis-rows");
 const interventionRowsEl = document.querySelector("#intervention-rows");
 const diagnosticAnalysisRowsEl = document.querySelector("#diagnostic-analysis-rows");
+const diagnosticHeatmapHeadEl = document.querySelector("#diagnostic-heatmap-head");
+const diagnosticHeatmapRowsEl = document.querySelector("#diagnostic-heatmap-rows");
 const interventionGroupRowsEl = document.querySelector("#intervention-group-rows");
 const classAnalysisRowsEl = document.querySelector("#class-analysis-rows");
 const teacherAnalysisRowsEl = document.querySelector("#teacher-analysis-rows");
@@ -998,6 +1000,29 @@ function setupCollapsiblePanels() {
   });
 }
 
+function setupAnalysisBlocks() {
+  document.querySelectorAll("[data-analysis-block]").forEach((block) => {
+    if (block.dataset.analysisReady) return;
+    const button = block.querySelector("[data-analysis-toggle]");
+    const content = block.querySelector("[data-analysis-content]");
+    if (!button || !content) return;
+
+    const sync = () => {
+      const isCollapsed = block.classList.contains("is-collapsed");
+      button.textContent = isCollapsed ? "Show" : "Hide";
+      button.setAttribute("aria-expanded", String(!isCollapsed));
+      content.hidden = isCollapsed;
+    };
+
+    button.addEventListener("click", () => {
+      block.classList.toggle("is-collapsed");
+      sync();
+    });
+    block.dataset.analysisReady = "true";
+    sync();
+  });
+}
+
 function toneForOverall(percentage) {
   if (percentage === null) {
     return {
@@ -1435,12 +1460,21 @@ function renderTopicRows() {
     <tr>
       <td>Q${question.number}</td>
       <td>
-        <input class="topic-input" data-topic-field="topic" data-question-index="${index}" value="${escapeHtml(question.topic)}" aria-label="Question ${question.number} topic">
+        <div class="question-detail-stack">
+          <label>
+            Topic
+            <input class="topic-input" data-topic-field="topic" data-question-index="${index}" value="${escapeHtml(question.topic)}" aria-label="Question ${question.number} topic">
+          </label>
+          <label>
+            Unit/group
+            <input class="group-input" data-topic-field="group" data-question-index="${index}" value="${escapeHtml(question.group || "")}" placeholder="e.g. Mechanics" aria-label="Question ${question.number} unit group">
+          </label>
+          <label>
+            Type
+            ${questionTypeSelect(question, index)}
+          </label>
+        </div>
       </td>
-      <td>
-        <input class="group-input" data-topic-field="group" data-question-index="${index}" value="${escapeHtml(question.group || "")}" placeholder="e.g. Mechanics" aria-label="Question ${question.number} unit group">
-      </td>
-      <td>${questionTypeSelect(question, index)}</td>
       <td>
         <input type="number" min="1" data-topic-field="max" data-question-index="${index}" value="${question.max}" aria-label="Question ${question.number} maximum mark">
       </td>
@@ -1449,13 +1483,20 @@ function renderTopicRows() {
         <textarea class="note-input" data-topic-field="note" data-question-index="${index}" aria-label="Question ${question.number} mark note" placeholder="e.g. must convert from Celsius to Kelvin">${escapeHtml(question.note || "")}</textarea>
       </td>
       <td>
-        <textarea data-comment-field="good" data-question-index="${index}" aria-label="Question ${question.number} good comment">${escapeHtml(question.comments.good)}</textarea>
-      </td>
-      <td>
-        <textarea data-comment-field="average" data-question-index="${index}" aria-label="Question ${question.number} average comment">${escapeHtml(question.comments.average)}</textarea>
-      </td>
-      <td>
-        <textarea data-comment-field="bad" data-question-index="${index}" aria-label="Question ${question.number} support comment">${escapeHtml(question.comments.bad)}</textarea>
+        <div class="comment-bank-stack">
+          <label>
+            Good
+            <textarea data-comment-field="good" data-question-index="${index}" aria-label="Question ${question.number} good comment">${escapeHtml(question.comments.good)}</textarea>
+          </label>
+          <label>
+            Average
+            <textarea data-comment-field="average" data-question-index="${index}" aria-label="Question ${question.number} average comment">${escapeHtml(question.comments.average)}</textarea>
+          </label>
+          <label>
+            Support
+            <textarea data-comment-field="bad" data-question-index="${index}" aria-label="Question ${question.number} support comment">${escapeHtml(question.comments.bad)}</textarea>
+          </label>
+        </div>
       </td>
       <td>
         <button type="button" class="small-action danger-action" data-delete-question="${index}">Delete</button>
@@ -1797,6 +1838,34 @@ function renderCohortAnalysis() {
           <td>${item.total}</td>
           <td>Q${item.mostAffected.question.number}: ${escapeHtml(item.mostAffected.question.topic)} (${item.mostAffected.count})</td>
           <td>${diagnosticResponse(item.diagnostic)}</td>
+        </tr>
+      `;
+    }).join("");
+
+  const heatmapDiagnostics = Object.entries(diagnosticOptions).filter(([diagnostic]) => (
+    questions.some((_, questionIndex) => pupils.some((pupil) => pupil.diagnostics?.[questionIndex]?.includes(diagnostic)))
+  ));
+  diagnosticHeatmapHeadEl.innerHTML = heatmapDiagnostics.length === 0
+    ? '<tr><th>Question</th><th>Diagnostics</th></tr>'
+    : `
+      <tr>
+        <th>Question</th>
+        ${heatmapDiagnostics.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("")}
+      </tr>
+    `;
+  diagnosticHeatmapRowsEl.innerHTML = heatmapDiagnostics.length === 0
+    ? '<tr><td colspan="2">Record diagnostics to generate a question-by-error heatmap.</td></tr>'
+    : questions.map((question, questionIndex) => {
+      const cells = heatmapDiagnostics.map(([diagnostic]) => {
+        const count = pupils.filter((pupil) => pupil.diagnostics?.[questionIndex]?.includes(diagnostic)).length;
+        const intensity = count === 0 ? "none" : count >= Math.max(3, Math.ceil(pupils.length * 0.25)) ? "high" : count >= 2 ? "medium" : "low";
+        return `<td class="heatmap-cell heatmap-${intensity}" title="${count} pupil${count === 1 ? "" : "s"}">${count || ""}</td>`;
+      }).join("");
+
+      return `
+        <tr>
+          <td>Q${question.number} <span>${escapeHtml(question.topic)}</span></td>
+          ${cells}
         </tr>
       `;
     }).join("");
@@ -3727,6 +3796,7 @@ structureFileInput.addEventListener("change", async () => {
 
 undoChangeButton.disabled = true;
 setupCollapsiblePanels();
+setupAnalysisBlocks();
 renderGradeBoundaries();
 renderSavedSlots();
 renderAutosaveRecovery();
