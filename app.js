@@ -19,6 +19,12 @@ const diagnosticOptions = {
   explanation: "Explanation issue",
   units: "Units issue",
   technique: "Exam technique",
+  unitConversion: "Unit conversion",
+  wrongEquation: "Wrong equation",
+  commandWord: "Missed command word",
+  graphScale: "Graph scale/axes",
+  missingKeyTerm: "Missing key term",
+  diagramLabels: "Diagram labels",
 };
 const skillOptions = {
   definition: "Definition/key words",
@@ -29,6 +35,40 @@ const skillOptions = {
   extended: "Extended response",
   command: "Command words",
   calculationLayout: "Calculation layout",
+  diagram: "Diagram drawing",
+};
+const skillPresets = {
+  calculation: ["calculationLayout", "rearranging", "sigfig"],
+  graph: ["graph", "data"],
+  data: ["data", "sigfig"],
+  definition: ["definition", "command"],
+  extended: ["extended", "command", "definition"],
+  practical: ["definition", "extended", "graph"],
+};
+const skillPresetLabels = {
+  calculation: "Calculation",
+  graph: "Graph",
+  data: "Data",
+  definition: "Definition",
+  extended: "Extended",
+  practical: "Practical",
+};
+const questionTypeOptions = {
+  mixed: { label: "Mixed", skills: [] },
+  calculation: { label: "Calculation", skills: skillPresets.calculation },
+  practical: { label: "Practical", skills: skillPresets.practical },
+  graph: { label: "Graph", skills: skillPresets.graph },
+  extended: { label: "Extended", skills: skillPresets.extended },
+  definition: { label: "Definition", skills: skillPresets.definition },
+  mcq: { label: "MCQ", skills: ["command"] },
+};
+const diagnosticPriorityByType = {
+  calculation: ["wrongEquation", "unitConversion", "calculation", "units"],
+  practical: ["unitConversion", "graphScale", "commandWord", "missingKeyTerm", "explanation"],
+  graph: ["graphScale", "units", "commandWord"],
+  extended: ["commandWord", "missingKeyTerm", "explanation", "technique"],
+  definition: ["missingKeyTerm", "explanation", "commandWord"],
+  mcq: ["commandWord", "technique"],
 };
 const toneOptions = {
   encouraging: {
@@ -80,7 +120,10 @@ function createQuestion(number, topic, max) {
     number,
     topic,
     max,
+    type: "mixed",
+    group: "",
     skills: [],
+    note: "",
     comments: createCommentBank(topic),
   };
 }
@@ -88,7 +131,10 @@ function createQuestion(number, topic, max) {
 function cloneQuestions() {
   return defaultQuestions.map((question) => ({
     ...question,
+    type: question.type || "mixed",
+    group: question.group || "",
     skills: [...(question.skills || [])],
+    note: question.note || "",
     comments: { ...question.comments },
   }));
 }
@@ -100,8 +146,11 @@ function createPupil(index) {
     classGroup: "",
     teacher: "",
     grade: "",
+    note: "",
+    feedbackSeed: 0,
     scores: questions ? questions.map(() => "") : defaultQuestions.map(() => ""),
     diagnostics: questions ? questions.map(() => []) : defaultQuestions.map(() => []),
+    feedbackOverride: { whatWentWell: "", evenBetterIf: "" },
   };
 }
 
@@ -125,13 +174,23 @@ const cohortSummaryEl = document.querySelector("#cohort-summary");
 const teacherSummaryEl = document.querySelector("#teacher-summary");
 const copyTeacherSummaryButton = document.querySelector("#copy-teacher-summary");
 const topicAverageRowsEl = document.querySelector("#topic-average-rows");
+const groupAverageRowsEl = document.querySelector("#group-average-rows");
+const typeAverageRowsEl = document.querySelector("#type-average-rows");
+const skillAnalysisRowsEl = document.querySelector("#skill-analysis-rows");
 const interventionRowsEl = document.querySelector("#intervention-rows");
 const diagnosticAnalysisRowsEl = document.querySelector("#diagnostic-analysis-rows");
 const interventionGroupRowsEl = document.querySelector("#intervention-group-rows");
+const classAnalysisRowsEl = document.querySelector("#class-analysis-rows");
+const teacherAnalysisRowsEl = document.querySelector("#teacher-analysis-rows");
 const goodThresholdEl = document.querySelector("#good-threshold");
 const averageThresholdEl = document.querySelector("#average-threshold");
 const feedbackLengthEl = document.querySelector("#feedback-length");
 const feedbackToneEl = document.querySelector("#feedback-tone");
+const feedbackStylePreviewEl = document.querySelector("#feedback-style-preview");
+const commentAvoidGradesEl = document.querySelector("#comment-avoid-grades");
+const commentLimitTopicsEl = document.querySelector("#comment-limit-topics");
+const commentIncludeRevisionTaskEl = document.querySelector("#comment-include-revision-task");
+const commentIncludeCohortComparisonEl = document.querySelector("#comment-include-cohort-comparison");
 const gradeScaleEl = document.querySelector("#grade-scale");
 const gradeBoundaryGridEl = document.querySelector("#grade-boundary-grid");
 const gradeDistributionSummaryEl = document.querySelector("#grade-distribution-summary");
@@ -145,8 +204,11 @@ const reportIncludeCohortAverageEl = document.querySelector("#report-include-coh
 const reportIncludeTeacherEl = document.querySelector("#report-include-teacher");
 const reportIncludeDateEl = document.querySelector("#report-include-date");
 const validationListEl = document.querySelector("#validation-list");
+const exportChecklistListEl = document.querySelector("#export-checklist-list");
 const feedbackOutputEl = document.querySelector("#feedback-output");
 const toggleFeedbackButton = document.querySelector("#toggle-feedback");
+const selectedPupilNoteEl = document.querySelector("#selected-pupil-note");
+const refreshWordingButton = document.querySelector("#refresh-wording");
 const overallScoreEl = document.querySelector("#overall-score");
 const overallBandEl = document.querySelector("#overall-band");
 const selectedPupilNameEl = document.querySelector("#selected-pupil-name");
@@ -170,13 +232,27 @@ const saveTemplateButton = document.querySelector("#save-template");
 const loadTemplateButton = document.querySelector("#load-template");
 const pasteMarksButton = document.querySelector("#paste-marks");
 const saveStatusEl = document.querySelector("#save-status");
+const autosaveRecoveryEl = document.querySelector("#autosave-recovery");
+const autosaveRecoveryTextEl = document.querySelector("#autosave-recovery-text");
+const restoreAutosaveButton = document.querySelector("#restore-autosave");
+const dismissAutosaveButton = document.querySelector("#dismiss-autosave");
 const resetButton = document.querySelector("#reset-topics");
 const addQuestionButton = document.querySelector("#add-question");
 const addPupilButton = document.querySelector("#add-pupil");
 const diagnosticRowsEl = document.querySelector("#diagnostic-rows");
+const feedbackReviewListEl = document.querySelector("#feedback-review-list");
+const resetFeedbackEditsButton = document.querySelector("#reset-feedback-edits");
+const reviewFilterEl = document.querySelector("#review-filter");
+const reviewSortEl = document.querySelector("#review-sort");
+const reviewSearchEl = document.querySelector("#review-search");
 const pupilSearchEl = document.querySelector("#pupil-search");
 const pupilFilterEl = document.querySelector("#pupil-filter");
 const filterCountEl = document.querySelector("#filter-count");
+const bulkNoteTextEl = document.querySelector("#bulk-note-text");
+const applyBulkNoteButton = document.querySelector("#apply-bulk-note");
+const bulkDiagnosticQuestionEl = document.querySelector("#bulk-diagnostic-question");
+const bulkDiagnosticThemeEl = document.querySelector("#bulk-diagnostic-theme");
+const applyBulkDiagnosticButton = document.querySelector("#apply-bulk-diagnostic");
 const copyFilteredFeedbackButton = document.querySelector("#copy-filtered-feedback");
 const printFilteredReportsButton = document.querySelector("#print-filtered-reports");
 const csvMappingPanelEl = document.querySelector("#csv-mapping-panel");
@@ -209,7 +285,10 @@ function normaliseQuestion(question, index) {
     number,
     topic,
     max: Math.max(Number(question.max) || 1, 1),
+    type: questionTypeOptions[question.type] ? question.type : "mixed",
+    group: String(question.group || ""),
     skills: Array.isArray(question.skills) ? question.skills.filter((skill) => skillOptions[skill]) : [],
+    note: String(question.note || ""),
     comments: {
       good: question.comments?.good || fallbackComments.good,
       average: question.comments?.average || fallbackComments.average,
@@ -235,6 +314,12 @@ function normalisePupil(pupil, index) {
     classGroup: String(pupil.classGroup || ""),
     teacher: String(pupil.teacher || ""),
     grade: String(pupil.grade || ""),
+    note: String(pupil.note || ""),
+    feedbackSeed: Number(pupil.feedbackSeed) || 0,
+    feedbackOverride: {
+      whatWentWell: String(pupil.feedbackOverride?.whatWentWell || ""),
+      evenBetterIf: String(pupil.feedbackOverride?.evenBetterIf || ""),
+    },
     scores,
     diagnostics,
   };
@@ -292,6 +377,14 @@ function average(values) {
   return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
+function hashText(text) {
+  return String(text).split("").reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) % 9973, 7);
+}
+
+function pickVariant(options, seed) {
+  return options[hashText(seed) % options.length];
+}
+
 function formatTopicList(items) {
   if (items.length === 0) return "";
   if (items.length === 1) return items[0];
@@ -303,7 +396,31 @@ function getFeedbackSettings() {
   return {
     length: feedbackLengthEl.value || "medium",
     tone: feedbackToneEl.value || "encouraging",
+    avoidGrades: commentAvoidGradesEl.checked,
+    limitTopics: commentLimitTopicsEl.checked,
+    includeRevisionTask: commentIncludeRevisionTaskEl.checked,
+    includeCohortComparison: commentIncludeCohortComparisonEl.checked,
   };
+}
+
+function applyFeedbackSettings(settings = {}) {
+  if (settings.length) feedbackLengthEl.value = settings.length;
+  if (settings.tone) feedbackToneEl.value = settings.tone;
+  if (settings.avoidGrades !== undefined) commentAvoidGradesEl.checked = Boolean(settings.avoidGrades);
+  if (settings.limitTopics !== undefined) commentLimitTopicsEl.checked = Boolean(settings.limitTopics);
+  if (settings.includeRevisionTask !== undefined) commentIncludeRevisionTaskEl.checked = Boolean(settings.includeRevisionTask);
+  if (settings.includeCohortComparison !== undefined) commentIncludeCohortComparisonEl.checked = Boolean(settings.includeCohortComparison);
+}
+
+function resetFeedbackSettings() {
+  applyFeedbackSettings({
+    length: "medium",
+    tone: "encouraging",
+    avoidGrades: false,
+    limitTopics: false,
+    includeRevisionTask: true,
+    includeCohortComparison: false,
+  });
 }
 
 function applyTone(text, settings) {
@@ -318,8 +435,40 @@ function diagnosticPhrase(values) {
     explanation: "using precise key words in definitions and written explanations",
     units: "selecting and carrying units consistently through calculations",
     technique: "interpreting command words and planning answers around the marks available",
+    unitConversion: "unit conversion, including prefixes and temperature conversions where relevant",
+    wrongEquation: "selecting the correct equation before substituting values",
+    commandWord: "matching the answer to the command word",
+    graphScale: "choosing sensible graph scales, labelled axes, and plotted points",
+    missingKeyTerm: "including the exact key terms required by the mark scheme",
+    diagramLabels: "labelling diagrams clearly with forces, rays, directions, and quantities",
   };
   return values.map((value) => phrases[value] || diagnosticOptions[value]?.toLowerCase()).filter(Boolean).join(" and ");
+}
+
+function diagnosticRevisionTask(value) {
+  const tasks = {
+    calculation: "write out the equation, substitution, rearrangement, answer, and unit for three similar calculations",
+    explanation: "rewrite two explanations with the mark-scheme key terms highlighted",
+    units: "complete a short units and prefixes drill before attempting the next calculation set",
+    technique: "underline the command word and annotate what the question is asking before answering",
+    unitConversion: "practise five conversions, including prefixes and Celsius to Kelvin where relevant",
+    wrongEquation: "make an equation card for the topic, then choose the equation before substituting numbers",
+    commandWord: "sort five past-paper prompts by command word and write what each command requires",
+    graphScale: "redraw two graphs with checked scales, labelled axes, plotted points, and units",
+    missingKeyTerm: "build a key-term checklist for the topic and use it to improve one written answer",
+    diagramLabels: "redraw three diagrams with every force, ray, direction, angle, and quantity labelled",
+  };
+  return tasks[value] || `complete focused practice on ${diagnosticOptions[value]?.toLowerCase() || value}`;
+}
+
+function orderedDiagnosticsForQuestion(question) {
+  const priority = diagnosticPriorityByType[question.type] || [];
+  return Object.entries(diagnosticOptions)
+    .sort(([a], [b]) => {
+      const aRank = priority.includes(a) ? priority.indexOf(a) : priority.length + Object.keys(diagnosticOptions).indexOf(a);
+      const bRank = priority.includes(b) ? priority.indexOf(b) : priority.length + Object.keys(diagnosticOptions).indexOf(b);
+      return aRank - bRank;
+    });
 }
 
 function skillPhrase(skill) {
@@ -332,8 +481,76 @@ function skillPhrase(skill) {
     extended: "structuring extended written responses with linked Physics points",
     command: "interpreting command words accurately",
     calculationLayout: "laying calculations out clearly",
+    diagram: "drawing and labelling clear Physics diagrams",
   };
   return phrases[skill] || skillOptions[skill]?.toLowerCase();
+}
+
+function skillRevisionTask(skillPhraseText) {
+  const tasks = [
+    ["graph", "complete three graph-gradient or trend questions, stating the gradient/intercept meaning and units each time"],
+    ["data", "complete three data-handling questions where you quote evidence, identify a pattern, and comment on any anomaly"],
+    ["significant figures", "redo five numerical answers, keeping full precision in the working and rounding only the final answer"],
+    ["rearranging", "practise rearranging five equations symbolically before substituting any numbers"],
+    ["extended", "plan two extended responses as linked Physics points before writing the full answer"],
+    ["command words", "annotate the command word on five questions and write down exactly what that command requires"],
+    ["calculation", "set out three calculations in the sequence equation, substitution, rearrangement, answer, unit"],
+    ["definitions", "rewrite five definitions using the exact key words expected by the mark scheme"],
+    ["diagrams", "redraw three Physics diagrams with labels, arrows, forces, angles, and units checked against the question"],
+  ];
+  return tasks.find(([key]) => skillPhraseText.includes(key))?.[1] || `complete a short focused practice set on ${skillPhraseText}`;
+}
+
+function sentenceCase(text) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return "";
+  return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+}
+
+function ensureSentence(text) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return "";
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+function splitSentences(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
+    ?.map((sentence) => sentence.trim())
+    .filter(Boolean) || [];
+}
+
+function cleanupFeedback(text, maxSentences = 4) {
+  const seen = new Set();
+  return splitSentences(text)
+    .map((sentence) => ensureSentence(sentence))
+    .filter((sentence) => {
+      const normalised = sentence.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      if (!normalised || seen.has(normalised)) return false;
+      seen.add(normalised);
+      return true;
+    })
+    .slice(0, maxSentences)
+    .join(" ")
+    .replace(/\s+,/g, ",")
+    .replace(/\s+\./g, ".")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function selectInsights(items, limit) {
+  const seen = new Set();
+  return items
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const key = item.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
 }
 
 function cloneState() {
@@ -373,6 +590,90 @@ function getTopicStats() {
       band: getBand(topicAverage),
     };
   });
+}
+
+function getGroupStats() {
+  const groups = new Map();
+  questions.forEach((question, questionIndex) => {
+    const groupName = question.group?.trim() || "Ungrouped";
+    if (!groups.has(groupName)) {
+      groups.set(groupName, {
+        name: groupName,
+        questionNumbers: [],
+        percentages: [],
+      });
+    }
+
+    const group = groups.get(groupName);
+    group.questionNumbers.push(`Q${question.number}`);
+    pupils.forEach((pupil) => {
+      const percentage = getPercentage(parseOptionalNumber(pupil.scores[questionIndex]), Number(question.max));
+      if (percentage !== null) group.percentages.push(percentage);
+    });
+  });
+
+  return [...groups.values()].map((group) => ({
+    ...group,
+    average: average(group.percentages),
+    count: group.percentages.length,
+    band: getBand(average(group.percentages)),
+  }));
+}
+
+function getQuestionTypeStats() {
+  const types = new Map();
+  questions.forEach((question, questionIndex) => {
+    const type = questionTypeOptions[question.type] ? question.type : "mixed";
+    const label = questionTypeOptions[type].label;
+    if (!types.has(type)) {
+      types.set(type, {
+        type,
+        label,
+        questionNumbers: [],
+        percentages: [],
+      });
+    }
+
+    const group = types.get(type);
+    group.questionNumbers.push(`Q${question.number}`);
+    pupils.forEach((pupil) => {
+      const percentage = getPercentage(parseOptionalNumber(pupil.scores[questionIndex]), Number(question.max));
+      if (percentage !== null) group.percentages.push(percentage);
+    });
+  });
+
+  return [...types.values()].map((type) => {
+    const typeAverage = average(type.percentages);
+    return {
+      ...type,
+      average: typeAverage,
+      count: type.percentages.length,
+      band: getBand(typeAverage),
+    };
+  });
+}
+
+function groupedPupilStats(field, emptyLabel) {
+  const groups = new Map();
+  pupils.forEach((pupil) => {
+    const key = String(pupil[field] || "").trim() || emptyLabel;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(analysePupil(pupil));
+  });
+
+  return [...groups.entries()].map(([name, analyses]) => {
+    const completed = analyses.filter((analysis) => analysis.overallPercentage !== null);
+    const groupAverage = average(completed.map((analysis) => analysis.overallPercentage));
+    const priorityCount = completed.filter((analysis) => analysis.overallPercentage < Number(averageThresholdEl.value || 40)).length;
+    return {
+      name,
+      average: groupAverage,
+      marked: completed.length,
+      total: analyses.length,
+      priorityCount,
+      band: getBand(groupAverage),
+    };
+  }).sort((a, b) => (a.average ?? 101) - (b.average ?? 101));
 }
 
 function relativePerformanceClass(percentage, topicAverage, entryCount) {
@@ -590,6 +891,7 @@ function diagnosticResponse(diagnostic) {
     sigfig: "Revisit significant figures, rounding only at the final step and checking precision against the data.",
     rearranging: "Practise rearranging equations symbolically before substituting numbers.",
     extended: "Model extended responses with linked Physics points and a brief plan before writing.",
+    diagram: "Practise drawing clear, labelled diagrams that include the relevant forces, rays, directions, angles, and quantities.",
   };
   return responses[diagnostic] || "Use targeted retrieval and guided exam practice.";
 }
@@ -624,12 +926,14 @@ function getQuestionSkillStats() {
     let attempts = 0;
     let strong = 0;
     let priority = 0;
+    let total = 0;
     questions.forEach((question, questionIndex) => {
       if (!question.skills?.includes(skill)) return;
       pupils.forEach((pupil) => {
         const percentage = getPercentage(parseOptionalNumber(pupil.scores[questionIndex]), Number(question.max));
         if (percentage === null) return;
         attempts += 1;
+        total += percentage;
         if (percentage >= Number(goodThresholdEl.value || 70)) strong += 1;
         if (percentage < Number(averageThresholdEl.value || 40)) priority += 1;
       });
@@ -638,6 +942,7 @@ function getQuestionSkillStats() {
       skill,
       label,
       attempts,
+      average: attempts === 0 ? null : Math.round(total / attempts),
       strong,
       priority,
     };
@@ -662,6 +967,35 @@ function applyReportOptions(options = {}) {
   if (options.cohortAverage !== undefined) reportIncludeCohortAverageEl.checked = Boolean(options.cohortAverage);
   if (options.teacher !== undefined) reportIncludeTeacherEl.checked = Boolean(options.teacher);
   if (options.date !== undefined) reportIncludeDateEl.checked = Boolean(options.date);
+}
+
+function setupCollapsiblePanels() {
+  document.querySelectorAll(".workspace > .panel").forEach((panel) => {
+    if (panel.dataset.collapsibleReady) return;
+    const header = panel.querySelector(":scope > .section-heading") || panel.firstElementChild;
+    if (!header) return;
+
+    header.classList.add("panel-collapse-header");
+    const title = panel.querySelector("h2")?.textContent || "section";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary-action panel-collapse-toggle";
+    button.setAttribute("aria-expanded", "true");
+    button.textContent = "Hide";
+    button.addEventListener("click", () => {
+      const isCollapsed = panel.classList.toggle("is-collapsed");
+      button.textContent = isCollapsed ? "Show" : "Hide";
+      button.setAttribute("aria-expanded", String(!isCollapsed));
+    });
+    header.append(button);
+    panel.dataset.collapsibleReady = "true";
+
+    if (title === "Review Reports") {
+      panel.classList.add("is-collapsed");
+      button.textContent = "Show";
+      button.setAttribute("aria-expanded", "false");
+    }
+  });
 }
 
 function toneForOverall(percentage) {
@@ -742,6 +1076,130 @@ function skillPerformanceSummary(questionsToSummarise) {
     .filter(Boolean);
 }
 
+function summariseQuestionAreas(questionsToSummarise) {
+  const groupCounts = new Map();
+  questionsToSummarise.forEach((question) => {
+    const group = question.group?.trim();
+    if (!group) return;
+    if (!groupCounts.has(group)) groupCounts.set(group, { count: 0, questions: [] });
+    const item = groupCounts.get(group);
+    item.count += 1;
+    item.questions.push(question);
+  });
+
+  const groupedQuestions = new Set();
+  const names = [];
+  [...groupCounts.entries()].forEach(([group, item]) => {
+    if (item.count < 2) return;
+    names.push(group);
+    item.questions.forEach((question) => groupedQuestions.add(question.index));
+  });
+
+  questionsToSummarise.forEach((question) => {
+    if (!groupedQuestions.has(question.index)) names.push(question.topic);
+  });
+
+  return [...new Set(names)];
+}
+
+function confidenceWarnings(analysis) {
+  const warnings = [];
+  const totalQuestions = questions.length;
+  const markedCount = analysis.marked.length;
+  const missingCount = Math.max(totalQuestions - markedCount, 0);
+
+  if (markedCount === 0) return ["No marks have been entered yet, so the comment cannot be personalised."];
+  if (markedCount === 1) warnings.push("Only one question has been marked, so check this comment before sharing it.");
+  if (totalQuestions > 0 && markedCount / totalQuestions < 0.6) warnings.push("Several marks are missing, so the feedback may overstate the available evidence.");
+  if (missingCount > 0) warnings.push(`${missingCount} question${missingCount === 1 ? " is" : "s are"} currently unmarked.`);
+  if (analysis.marked.length > 0 && analysis.goodTopics.length === 0 && analysis.badTopics.length === 0) warnings.push("Most marked questions are in the average band, so the WWW/EBI split may need teacher judgement.");
+
+  return warnings;
+}
+
+function cohortComparisonSentence(pupil, analysis) {
+  const completed = pupils
+    .filter((item) => item.id !== pupil.id)
+    .map((item) => analysePupil(item).overallPercentage)
+    .filter((percentage) => percentage !== null);
+  const comparisonAverage = average(completed);
+  if (comparisonAverage === null) return "";
+
+  const difference = analysis.overallPercentage - comparisonAverage;
+  if (Math.abs(difference) < 5) return `Your overall performance was broadly in line with the rest of the cohort average of ${comparisonAverage}%.`;
+  return `Your overall performance was ${Math.abs(difference)} percentage points ${difference > 0 ? "above" : "below"} the rest-of-cohort average of ${comparisonAverage}%.`;
+}
+
+function questionTypeFeedbackSentence(analysis, band) {
+  const counts = new Map();
+  analysis.marked
+    .filter((question) => question.band === band)
+    .forEach((question) => {
+      const type = questionTypeOptions[question.type] ? question.type : "mixed";
+      const label = questionTypeOptions[type].label.toLowerCase();
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+  const [label, count] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] || [];
+  if (!label || count < 1) return "";
+  if (band === "good") return `Your ${label} questions were a relative strength.`;
+  if (band === "bad") return `${sentenceCase(label)}-style questions need more focused practice.`;
+  return "";
+}
+
+function nextTasksForPupil(pupil) {
+  const analysis = analysePupil(pupil);
+  if (analysis.marked.length === 0) return ["Enter marks to generate personalised next tasks."];
+
+  const tasks = [];
+  const weakestTopic = [...analysis.badTopics, ...analysis.averageTopics].sort((a, b) => a.percentage - b.percentage)[0];
+  if (weakestTopic) {
+    tasks.push(`Redo one ${weakestTopic.topic} question, then mark it and correct the first lost mark.`);
+  }
+
+  const weakestSkill = skillPerformanceSummary(analysis.badTopics)[0];
+  if (weakestSkill) tasks.push(sentenceCase(skillRevisionTask(weakestSkill)));
+
+  const firstDiagnostic = analysis.marked.flatMap((question) => question.diagnostics || [])[0];
+  if (firstDiagnostic) tasks.push(sentenceCase(diagnosticRevisionTask(firstDiagnostic)));
+
+  const weakType = analysis.badTopics[0]?.type;
+  if (weakType && questionTypeOptions[weakType]) {
+    tasks.push(`Complete one ${questionTypeOptions[weakType].label.toLowerCase()}-style question under timed conditions.`);
+  }
+
+  if (pupil.note?.trim()) tasks.push(ensureSentence(pupil.note.trim()));
+
+  return selectInsights(tasks, 3);
+}
+
+function mergeQuestionComments(questionsToSummarise) {
+  const grouped = new Map();
+  const standalone = new Set();
+
+  questionsToSummarise.forEach((question) => {
+    const comment = (question.comments?.[question.band] || question.comments?.bad || "").trim();
+    const topic = String(question.topic || "").trim();
+    if (!comment) return;
+
+    const topicIndex = topic ? comment.indexOf(topic) : -1;
+    if (topicIndex === -1 || comment.indexOf(topic, topicIndex + topic.length) !== -1) {
+      standalone.add(comment);
+      return;
+    }
+
+    const prefix = comment.slice(0, topicIndex);
+    const suffix = comment.slice(topicIndex + topic.length);
+    const key = `${prefix}|||${suffix}`;
+    if (!grouped.has(key)) grouped.set(key, { prefix, suffix, topics: [] });
+    grouped.get(key).topics.push(topic);
+  });
+
+  return [
+    ...[...grouped.values()].map((item) => `${item.prefix}${formatTopicList([...new Set(item.topics)])}${item.suffix}`),
+    ...standalone,
+  ].join(" ");
+}
+
 function analysePupil(pupil) {
   const marked = questions
     .map((question, index) => {
@@ -785,35 +1243,50 @@ function buildFeedbackText(pupil) {
   const settings = getFeedbackSettings();
   const toneSetting = toneOptions[settings.tone] || toneOptions.encouraging;
   const analysis = analysePupil(pupil);
-  const secureTopics = analysis.goodTopics.length > 0 ? analysis.goodTopics : analysis.averageTopics.slice(0, 2);
-  const targetTopics = [...analysis.badTopics, ...analysis.averageTopics].slice(0, 4);
-  const secureTopicNames = secureTopics.map((question) => question.topic);
-  const targetTopicNames = targetTopics.map((question) => question.topic);
+  const topicLimit = settings.limitTopics ? 2 : 4;
+  const secureTopics = (analysis.goodTopics.length > 0 ? analysis.goodTopics : analysis.averageTopics.slice(0, 2)).slice(0, topicLimit);
+  const targetTopics = [...analysis.badTopics, ...analysis.averageTopics].slice(0, topicLimit);
+  const secureTopicNames = summariseQuestionAreas(secureTopics);
+  const targetTopicNames = summariseQuestionAreas(targetTopics);
   const secureSkillNames = skillPerformanceSummary(analysis.goodTopics).slice(0, 3);
   const targetSkillNames = skillPerformanceSummary(analysis.badTopics).slice(0, 3);
-  const secureSkillSentence = secureSkillNames.length > 0
-    ? `This suggests you are applying skills such as ${formatTopicList(secureSkillNames)} well.`
-    : "";
-  const targetSkillSentence = targetSkillNames.length > 0
-    ? `The marks on these questions suggest you should practise ${formatTopicList(targetSkillNames)}.`
-    : "";
   const strengthDetails = secureTopics
-    .slice(0, 2)
-    .map((question) => question.comments?.[question.band] || question.comments?.good)
-    .filter(Boolean)
-    .join(" ");
+    .slice(0, 3);
   const targetDetails = targetTopics
-    .slice(0, 2)
-    .map((question) => question.comments?.[question.band] || question.comments?.bad)
-    .filter(Boolean)
-    .join(" ");
+    .slice(0, 3);
+  const strengthCommentDetails = mergeQuestionComments(strengthDetails);
+  const targetCommentDetails = mergeQuestionComments(targetDetails);
   const diagnosticDetails = analysis.marked
     .filter((question) => question.diagnostics?.length > 0)
-    .slice(0, 3)
+    .slice(0, 2)
     .map((question) => `For ${question.topic}, the main issue was ${diagnosticPhrase(question.diagnostics)}.`)
     .join(" ");
-  const gradeNudge = gradeFeedbackNudge(analysis);
+  const diagnosticTasks = analysis.marked
+    .flatMap((question) => question.diagnostics || [])
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .slice(0, 2)
+    .map(diagnosticRevisionTask);
+  const diagnosticTaskText = diagnosticTasks.length > 0
+    ? `A precise exam-skill task is to ${formatTopicList(diagnosticTasks)}.`
+    : "";
+  const gradeNudge = settings.avoidGrades ? "" : gradeFeedbackNudge(analysis);
+  const cohortComparison = settings.includeCohortComparison && analysis.overallPercentage !== null
+    ? cohortComparisonSentence(pupil, analysis)
+    : "";
+  const secureTypeFeedback = questionTypeFeedbackSentence(analysis, "good");
+  const targetTypeFeedback = questionTypeFeedbackSentence(analysis, "bad");
   const examSkills = examSkillTarget(analysis);
+  const secureNotes = analysis.goodTopics
+    .filter((question) => question.note)
+    .slice(0, 2)
+    .map((question) => `You handled the important detail in Q${question.number}: ${question.note}.`)
+    .join(" ");
+  const targetNotes = analysis.badTopics
+    .filter((question) => question.note)
+    .slice(0, 2)
+    .map((question) => `For Q${question.number}, remember: ${question.note}.`)
+    .join(" ");
+  const extraNote = ensureSentence(pupil.note || "");
 
   if (analysis.marked.length === 0) {
     return {
@@ -823,36 +1296,106 @@ function buildFeedbackText(pupil) {
     };
   }
 
-  let whatWentWell = secureTopics.length > 0
-    ? `${applyTone(analysis.tone.opener, settings)} You ${analysis.tone.goodVerb} ${formatTopicList(secureTopicNames)}, and you should keep using the strategies that helped you access these questions. ${secureSkillSentence} ${strengthDetails}`
-    : `${analysis.tone.opener} ${analysis.tone.fallbackWin}`;
+  const seed = `${pupil.name}-${analysis.overallPercentage}-${settings.tone}-${pupil.feedbackSeed || 0}`;
+  const strengthLead = pickVariant([
+    "A clear strength was",
+    "You were most secure on",
+    "The best evidence of understanding came from",
+  ], seed);
+  const targetLead = pickVariant([
+    "The main area to develop is",
+    "A good next step is to focus on",
+    "To pick up more marks, prioritise",
+  ], `${seed}-target`);
+  const skillBridge = pickVariant([
+    "This also points to confidence with",
+    "That suggests you are using",
+    "Keep applying",
+  ], `${seed}-skill`);
+  const taskBridge = pickVariant([
+    "A useful revision task would be to",
+    "To make this more secure,",
+    "For practice,",
+  ], `${seed}-task`);
 
-  let evenBetterIf = targetTopics.length > 0
-    ? `${toneSetting.targetLead}, you ${analysis.tone.targetVerb} ${formatTopicList(targetTopicNames)}. ${targetSkillSentence} ${targetDetails} ${diagnosticDetails} You could revisit the key equations, practise explaining the underlying physics with the key words that mark schemes reward, and complete exam-style questions with careful attention to command words and calculation layout. ${examSkills} ${gradeNudge}`
-    : `${toneSetting.targetLead}, ${toneSetting.precision} ${diagnosticDetails} ${examSkills} ${gradeNudge}`;
+  const wwwSentences = secureTopics.length > 0
+    ? [
+      `${applyTone(analysis.tone.opener, settings)} ${strengthLead} ${formatTopicList(secureTopicNames)}.`,
+      secureSkillNames.length > 0 ? `${skillBridge} ${formatTopicList(secureSkillNames)}.` : "",
+      secureTypeFeedback,
+      strengthCommentDetails,
+      secureNotes,
+    ]
+    : [analysis.tone.opener, analysis.tone.fallbackWin];
+
+  const ebiSentences = targetTopics.length > 0
+    ? [
+      `${toneSetting.targetLead}, ${targetLead} ${formatTopicList(targetTopicNames)}.`,
+      targetTypeFeedback,
+      targetSkillNames.length > 0 ? `The pattern in your marks suggests ${formatTopicList(targetSkillNames)} should be a focus.` : "",
+      settings.includeRevisionTask && targetSkillNames.length > 0 ? `${taskBridge} ${skillRevisionTask(targetSkillNames[0])}.` : "",
+      targetCommentDetails,
+      targetNotes,
+      diagnosticDetails,
+      settings.includeRevisionTask ? diagnosticTaskText : "",
+      examSkills,
+      gradeNudge,
+      cohortComparison,
+    ]
+    : [
+      `${toneSetting.targetLead}, ${toneSetting.precision}`,
+      diagnosticDetails,
+      settings.includeRevisionTask ? diagnosticTaskText : "",
+      examSkills,
+      gradeNudge,
+      cohortComparison,
+    ];
+
+  const sentenceLimit = settings.length === "short" ? 2 : settings.length === "detailed" ? 5 : 3;
+  let whatWentWell = cleanupFeedback(selectInsights(wwwSentences, sentenceLimit + 1).join(" "), sentenceLimit);
+  let evenBetterIf = cleanupFeedback(selectInsights(ebiSentences, sentenceLimit + 2).join(" "), sentenceLimit + 1);
 
   if (settings.length === "short") {
-    whatWentWell = secureTopics.length > 0
-      ? `You showed strength in ${formatTopicList(secureTopicNames)}.${secureSkillNames.length > 0 ? ` This also shows confidence with ${formatTopicList(secureSkillNames)}.` : ""}`
-      : analysis.tone.fallbackWin;
-    evenBetterIf = targetTopics.length > 0
-      ? `You could improve by focusing revision on ${formatTopicList(targetTopicNames)}.${targetSkillNames.length > 0 ? ` You should practise ${formatTopicList(targetSkillNames)}.` : ""} ${examSkills} ${diagnosticDetails} ${gradeNudge}`
-      : `${toneSetting.precision} ${examSkills} ${gradeNudge}`;
+    whatWentWell = cleanupFeedback(whatWentWell, 2);
+    evenBetterIf = cleanupFeedback(evenBetterIf, 2);
   }
 
   if (settings.length === "detailed") {
     const comparison = analysis.overallPercentage === null ? "" : `Your overall score was ${analysis.overallPercentage}%, so the most useful next step is to connect revision to the question types where marks were lost.`;
-    whatWentWell = `${whatWentWell} ${comparison}`;
-    evenBetterIf = `${evenBetterIf} After revising each priority topic, complete a timed exam question, mark it against the scheme, annotate the command word, and rewrite one explanation using precise Physics vocabulary and a clear calculation layout where relevant.`;
+    whatWentWell = cleanupFeedback(`${whatWentWell} ${comparison}`, 5);
+    evenBetterIf = cleanupFeedback(`${evenBetterIf} ${settings.includeRevisionTask ? "After revising each priority topic, complete a timed exam question, mark it against the scheme, annotate the command word, and rewrite one explanation using precise Physics vocabulary and a clear calculation layout where relevant." : ""}`, 6);
   }
 
-  return { analysis, whatWentWell, evenBetterIf };
+  const finalWhatWentWell = cleanupFeedback(whatWentWell, settings.length === "detailed" ? 5 : sentenceLimit);
+  const finalEvenBetterIf = `${cleanupFeedback(evenBetterIf, settings.length === "detailed" ? 6 : sentenceLimit + 1)} ${extraNote}`.trim();
+
+  return {
+    analysis,
+    whatWentWell: finalWhatWentWell,
+    evenBetterIf: finalEvenBetterIf,
+  };
+}
+
+function finalFeedbackForPupil(pupil) {
+  const generated = buildFeedbackText(pupil);
+  return {
+    analysis: generated.analysis,
+    whatWentWell: pupil.feedbackOverride?.whatWentWell?.trim() || generated.whatWentWell,
+    evenBetterIf: pupil.feedbackOverride?.evenBetterIf?.trim() || generated.evenBetterIf,
+    generated,
+  };
 }
 
 function renderQuestionSkillControls(question, index) {
   return `
     <fieldset class="skill-checklist">
       <legend>Question skills</legend>
+      <div class="skill-presets">
+        ${Object.keys(skillPresets).map((preset) => `
+          <button type="button" class="secondary-action" data-skill-preset="${preset}" data-question-index="${index}">${skillPresetLabels[preset] || preset}</button>
+        `).join("")}
+        <button type="button" class="secondary-action" data-clear-skills="${index}">Clear</button>
+      </div>
       ${Object.entries(skillOptions).map(([value, label]) => `
         <label>
           <input
@@ -868,6 +1411,25 @@ function renderQuestionSkillControls(question, index) {
   `;
 }
 
+function renderBulkDiagnosticControls() {
+  bulkDiagnosticQuestionEl.innerHTML = questions.map((question, index) => (
+    `<option value="${index}">Q${question.number} ${escapeHtml(question.topic)}</option>`
+  )).join("");
+  bulkDiagnosticThemeEl.innerHTML = Object.entries(diagnosticOptions).map(([value, label]) => (
+    `<option value="${value}">${escapeHtml(label)}</option>`
+  )).join("");
+}
+
+function questionTypeSelect(question, index) {
+  return `
+    <select data-topic-field="type" data-question-index="${index}" aria-label="Question ${question.number} type">
+      ${Object.entries(questionTypeOptions).map(([value, option]) => `
+        <option value="${value}" ${question.type === value ? "selected" : ""}>${escapeHtml(option.label)}</option>
+      `).join("")}
+    </select>
+  `;
+}
+
 function renderTopicRows() {
   topicRowsEl.innerHTML = questions.map((question, index) => `
     <tr>
@@ -876,9 +1438,16 @@ function renderTopicRows() {
         <input class="topic-input" data-topic-field="topic" data-question-index="${index}" value="${escapeHtml(question.topic)}" aria-label="Question ${question.number} topic">
       </td>
       <td>
+        <input class="group-input" data-topic-field="group" data-question-index="${index}" value="${escapeHtml(question.group || "")}" placeholder="e.g. Mechanics" aria-label="Question ${question.number} unit group">
+      </td>
+      <td>${questionTypeSelect(question, index)}</td>
+      <td>
         <input type="number" min="1" data-topic-field="max" data-question-index="${index}" value="${question.max}" aria-label="Question ${question.number} maximum mark">
       </td>
       <td>${renderQuestionSkillControls(question, index)}</td>
+      <td>
+        <textarea class="note-input" data-topic-field="note" data-question-index="${index}" aria-label="Question ${question.number} mark note" placeholder="e.g. must convert from Celsius to Kelvin">${escapeHtml(question.note || "")}</textarea>
+      </td>
       <td>
         <textarea data-comment-field="good" data-question-index="${index}" aria-label="Question ${question.number} good comment">${escapeHtml(question.comments.good)}</textarea>
       </td>
@@ -969,8 +1538,71 @@ function renderPupilRows() {
   }).join("");
 }
 
+function renderFeedbackReview() {
+  const filter = reviewFilterEl.value;
+  const sort = reviewSortEl.value;
+  const query = reviewSearchEl.value.trim().toLowerCase();
+  const visiblePupils = pupils
+    .map((pupil, index) => {
+      const analysis = analysePupil(pupil);
+      const warnings = confidenceWarnings(analysis);
+      const missingMarks = pupil.scores.filter((score) => score === "").length;
+      const priorityScore = (warnings.length * 25)
+        + missingMarks
+        + (analysis.overallPercentage === null ? 40 : Math.max(0, 70 - analysis.overallPercentage));
+      return { pupil, index, analysis, warnings, missingMarks, priorityScore };
+    })
+    .filter(({ pupil, analysis, warnings }) => {
+      const edited = Boolean(pupil.feedbackOverride?.whatWentWell?.trim() || pupil.feedbackOverride?.evenBetterIf?.trim());
+      const matchesQuery = !query || [pupil.name, pupil.classGroup, pupil.teacher].some((value) => String(value || "").toLowerCase().includes(query));
+      if (!matchesQuery) return false;
+      if (filter === "edited") return edited;
+      if (filter === "needs-review") return warnings.length > 0 || analysis.overallPercentage === null;
+      if (filter === "below-average") return analysis.overallPercentage !== null && analysis.overallPercentage < Number(averageThresholdEl.value || 40);
+      if (filter === "missing") return pupil.scores.some((score) => score === "");
+      return true;
+    })
+    .sort((a, b) => {
+      if (sort === "priority") return b.priorityScore - a.priorityScore;
+      if (sort === "lowest") return (a.analysis.overallPercentage ?? 101) - (b.analysis.overallPercentage ?? 101);
+      if (sort === "missing") return b.missingMarks - a.missingMarks;
+      return a.index - b.index;
+    });
+
+  feedbackReviewListEl.innerHTML = visiblePupils.length === 0
+    ? '<p class="empty-state">No reports match this review filter.</p>'
+    : visiblePupils.map(({ pupil, index, warnings, priorityScore }) => {
+    const feedback = finalFeedbackForPupil(pupil);
+    const percentage = feedback.analysis.overallPercentage === null ? "No marks yet" : `${feedback.analysis.overallPercentage}%`;
+    return `
+      <article class="review-card">
+        <h3>${escapeHtml(pupil.name)} <span class="save-status">${percentage} · priority ${Math.round(priorityScore)}</span></h3>
+        ${warnings.length > 0 ? `
+          <div class="confidence-warning">
+            ${warnings.slice(0, 2).map((warning) => `<p>${escapeHtml(warning)}</p>`).join("")}
+          </div>
+        ` : ""}
+        <div class="review-grid">
+          <label>
+            What went well
+            <textarea data-feedback-review="whatWentWell" data-pupil-index="${index}">${escapeHtml(feedback.whatWentWell)}</textarea>
+          </label>
+          <label>
+            Even better if
+            <textarea data-feedback-review="evenBetterIf" data-pupil-index="${index}">${escapeHtml(feedback.evenBetterIf)}</textarea>
+          </label>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
 function renderCohortAnalysis() {
   const topicStats = getTopicStats();
+  const groupStats = getGroupStats();
+  const typeStats = getQuestionTypeStats();
+  const classStats = groupedPupilStats("classGroup", "No class set");
+  const teacherStats = groupedPupilStats("teacher", "No teacher set");
   const pupilAnalyses = pupils.map(analysePupil);
   const completedAnalyses = pupilAnalyses.filter((analysis) => analysis.overallPercentage !== null);
   const cohortAverage = average(completedAnalyses.map((analysis) => analysis.overallPercentage));
@@ -1005,6 +1637,20 @@ function renderCohortAnalysis() {
     </div>
   `;
 
+  const groupedRows = (stats, emptyText) => stats.length === 0
+    ? `<tr><td colspan="4">${emptyText}</td></tr>`
+    : stats.map((stat) => `
+      <tr>
+        <td>${escapeHtml(stat.name)}</td>
+        <td><span class="band ${stat.band === "pending" ? "average" : stat.band}">${stat.average === null ? "-" : `${stat.average}%`}</span></td>
+        <td>${stat.marked}/${stat.total}</td>
+        <td>${stat.priorityCount > 0 ? `${stat.priorityCount} below average threshold` : "No immediate priority"}</td>
+      </tr>
+    `).join("");
+
+  classAnalysisRowsEl.innerHTML = groupedRows(classStats, "Add class/group values to compare classes.");
+  teacherAnalysisRowsEl.innerHTML = groupedRows(teacherStats, "Add teacher values to compare teaching groups.");
+
   topicAverageRowsEl.innerHTML = topicStats.map((stat) => {
     const pattern = stat.average === null
       ? "No entries yet"
@@ -1024,6 +1670,71 @@ function renderCohortAnalysis() {
       </tr>
     `;
   }).join("");
+
+  groupAverageRowsEl.innerHTML = groupStats.length === 0
+    ? '<tr><td colspan="5">Add unit groups in Exam Structure to compare broader topics.</td></tr>'
+    : groupStats
+      .slice()
+      .sort((a, b) => (a.average ?? 101) - (b.average ?? 101))
+      .map((stat) => {
+        const pattern = stat.average === null
+          ? "No entries yet"
+          : stat.band === "good"
+            ? "Cohort strength"
+            : stat.band === "average"
+              ? "Developing"
+              : "Class priority";
+
+        return `
+          <tr>
+            <td>${escapeHtml(stat.name)}</td>
+            <td><span class="band ${stat.band === "pending" ? "average" : stat.band}">${stat.average === null ? "-" : `${stat.average}%`}</span></td>
+            <td>${stat.count}</td>
+            <td>${escapeHtml(stat.questionNumbers.join(", "))}</td>
+            <td>${pattern}</td>
+          </tr>
+        `;
+      }).join("");
+
+  typeAverageRowsEl.innerHTML = typeStats.length === 0
+    ? '<tr><td colspan="5">Set question types in Exam Structure to compare performance by question style.</td></tr>'
+    : typeStats
+      .slice()
+      .sort((a, b) => (a.average ?? 101) - (b.average ?? 101))
+      .map((stat) => {
+        const pattern = stat.average === null
+          ? "No entries yet"
+          : stat.band === "good"
+            ? "Cohort strength"
+            : stat.band === "average"
+              ? "Developing"
+              : "Class priority";
+
+        return `
+          <tr>
+            <td>${escapeHtml(stat.label)}</td>
+            <td><span class="band ${stat.band === "pending" ? "average" : stat.band}">${stat.average === null ? "-" : `${stat.average}%`}</span></td>
+            <td>${stat.count}</td>
+            <td>${escapeHtml(stat.questionNumbers.join(", "))}</td>
+            <td>${pattern}</td>
+          </tr>
+        `;
+      }).join("");
+
+  skillAnalysisRowsEl.innerHTML = skillStats.length === 0
+    ? '<tr><td colspan="5">Tag questions with skills and enter marks to analyse skill performance.</td></tr>'
+    : skillStats
+      .slice()
+      .sort((a, b) => (a.average ?? 101) - (b.average ?? 101))
+      .map((stat) => `
+        <tr>
+          <td>${escapeHtml(stat.label)}</td>
+          <td>${stat.average === null ? "-" : `${stat.average}%`}</td>
+          <td>${stat.attempts}</td>
+          <td>${stat.strong}</td>
+          <td>${stat.priority}</td>
+        </tr>
+      `).join("");
 
   const interventionStats = topicStats
     .filter((stat) => stat.average !== null)
@@ -1123,6 +1834,17 @@ function renderCohortAnalysis() {
       if (!groups.has(key)) groups.set(key, { pupils: [], focus: `Target ${diagnosticOptions[topDiagnostic].toLowerCase()} with short retrieval and guided practice.` });
       groups.get(key).pupils.push(pupil.name);
     }
+
+    const weakSkillCounts = skillPerformanceSummary(analysis.badTopics).reduce((counts, skillPhraseText) => {
+      counts[skillPhraseText] = (counts[skillPhraseText] || 0) + 1;
+      return counts;
+    }, {});
+    const weakestSkill = Object.entries(weakSkillCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (weakestSkill) {
+      const key = `Skill: ${weakestSkill}`;
+      if (!groups.has(key)) groups.set(key, { pupils: [], focus: `Practise ${weakestSkill}: ${skillRevisionTask(weakestSkill)}.` });
+      groups.get(key).pupils.push(pupil.name);
+    }
   });
 
   const groupRows = [...groups.entries()]
@@ -1148,12 +1870,16 @@ function renderSelectedFeedback() {
     selectedPupilNameEl.textContent = "No pupils";
     overallScoreEl.textContent = "0%";
     overallBandEl.textContent = "No marks yet";
+    selectedPupilNoteEl.value = "";
     feedbackOutputEl.innerHTML = '<p class="empty-state">Add a pupil to generate feedback.</p>';
+    renderFeedbackStylePreview();
     return;
   }
 
-  const feedback = buildFeedbackText(pupil);
+  const feedback = finalFeedbackForPupil(pupil);
   const { analysis } = feedback;
+  const warnings = confidenceWarnings(analysis);
+  const nextTasks = nextTasksForPupil(pupil);
   const topicBreakdown = analysis.marked.length > 0
     ? analysis.marked.map((question) => {
       const cohortAverage = topicStats[question.index]?.average;
@@ -1169,6 +1895,7 @@ function renderSelectedFeedback() {
     : "";
 
   selectedPupilNameEl.textContent = pupil.name;
+  selectedPupilNoteEl.value = pupil.note || "";
   overallScoreEl.textContent = analysis.overallPercentage === null ? "0%" : `${analysis.overallPercentage}%`;
   overallBandEl.textContent = analysis.calculatedGrade ? `${analysis.tone.label} · ${analysis.calculatedGrade}` : analysis.tone.label;
   feedbackOutputEl.innerHTML = `
@@ -1180,6 +1907,18 @@ function renderSelectedFeedback() {
       <h3>Even better if</h3>
       <p>${escapeHtml(feedback.evenBetterIf)}</p>
     </section>
+    ${warnings.length > 0 ? `
+      <section class="confidence-warning">
+        <h3>Check before sharing</h3>
+        ${warnings.map((warning) => `<p>${escapeHtml(warning)}</p>`).join("")}
+      </section>
+    ` : ""}
+    <section>
+      <h3>Your next 3 tasks</h3>
+      <ol class="next-task-list">
+        ${nextTasks.map((task) => `<li>${escapeHtml(ensureSentence(task))}</li>`).join("")}
+      </ol>
+    </section>
     ${topicBreakdown ? `
       <section>
         <h3>Topic breakdown</h3>
@@ -1187,6 +1926,18 @@ function renderSelectedFeedback() {
       </section>
     ` : ""}
   `;
+  renderFeedbackStylePreview();
+}
+
+function renderFeedbackStylePreview() {
+  const pupil = pupils.find((item) => item.id === selectedPupilId) || pupils[0];
+  if (!pupil) {
+    feedbackStylePreviewEl.textContent = "Add a pupil to preview the current feedback style.";
+    return;
+  }
+
+  const generated = buildFeedbackText(pupil);
+  feedbackStylePreviewEl.textContent = `${generated.whatWentWell} ${generated.evenBetterIf}`;
 }
 
 function renderDiagnostics() {
@@ -1198,8 +1949,8 @@ function renderDiagnostics() {
 
   diagnosticRowsEl.innerHTML = questions.map((question, questionIndex) => `
     <fieldset>
-      <legend>Q${question.number}</legend>
-      ${Object.entries(diagnosticOptions).map(([value, label]) => `
+      <legend>Q${question.number} · ${escapeHtml(questionTypeOptions[question.type]?.label || "Mixed")}</legend>
+      ${orderedDiagnosticsForQuestion(question).map(([value, label]) => `
         <label>
           <input
             type="checkbox"
@@ -1225,6 +1976,9 @@ function getValidationWarnings() {
   const emptyComments = questions.filter((question) => (
     !question.comments.good.trim() || !question.comments.average.trim() || !question.comments.bad.trim()
   )).length;
+  const noGroup = questions.filter((question) => !question.group?.trim()).length;
+  const noSkills = questions.filter((question) => !question.skills?.length).length;
+  const mixedTypes = questions.filter((question) => !question.type || question.type === "mixed").length;
   const invalidThresholds = Number(averageThresholdEl.value) >= Number(goodThresholdEl.value);
   const gradeSettings = getGradeSettings();
   const gradeBoundaries = getActiveGradeScale().grades.map((grade) => gradeSettings.boundaries[grade]);
@@ -1234,6 +1988,9 @@ function getValidationWarnings() {
   if (blankTopics > 0) warnings.push(`${blankTopics} topic name${blankTopics === 1 ? " is" : "s are"} blank.`);
   if (missingMarks > 0) warnings.push(`${missingMarks} mark cell${missingMarks === 1 ? " is" : "s are"} empty across ${incompletePupils} pupil${incompletePupils === 1 ? "" : "s"}.`);
   if (emptyComments > 0) warnings.push(`${emptyComments} question${emptyComments === 1 ? " has" : "s have"} an empty comment-bank field.`);
+  if (noGroup > 0) warnings.push(`${noGroup} question${noGroup === 1 ? " has" : "s have"} no unit/group set.`);
+  if (mixedTypes > 0) warnings.push(`${mixedTypes} question${mixedTypes === 1 ? " is" : "s are"} still set to Mixed question type.`);
+  if (noSkills > 0) warnings.push(`${noSkills} question${noSkills === 1 ? " has" : "s have"} no skills tagged.`);
   if (invalidThresholds) warnings.push("Average threshold should be lower than the good threshold.");
   if (invalidGradeBoundaries) warnings.push("Grade boundaries should descend from the highest grade to the lowest grade.");
   if (questions.length === 0) warnings.push("At least one question is needed.");
@@ -1248,6 +2005,47 @@ function renderValidation() {
   validationListEl.innerHTML = warnings.length === 0
     ? '<li class="validation-ok">No validation issues found.</li>'
     : warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+}
+
+function getFinalExportChecklist() {
+  const items = [];
+  const missingMarks = pupils.reduce((sum, pupil) => sum + pupil.scores.filter((score) => score === "").length, 0);
+  const confidenceCount = pupils.filter((pupil) => confidenceWarnings(analysePupil(pupil)).length > 0).length;
+  const needsReviewCount = pupils.filter((pupil) => {
+    const analysis = analysePupil(pupil);
+    return analysis.overallPercentage === null || confidenceWarnings(analysis).length > 0;
+  }).length;
+  const structureWarnings = getValidationWarnings().filter((warning) => (
+    /unit\/group|Mixed question type|skills tagged|comment-bank|threshold|Grade boundaries/.test(warning)
+  ));
+
+  items.push(missingMarks === 0
+    ? { ok: true, text: "No missing mark cells." }
+    : { ok: false, text: `${missingMarks} mark cell${missingMarks === 1 ? " is" : "s are"} still empty.` });
+  items.push(confidenceCount === 0
+    ? { ok: true, text: "No confidence warnings on generated comments." }
+    : { ok: false, text: `${confidenceCount} pupil comment${confidenceCount === 1 ? " has" : "s have"} confidence warnings.` });
+  items.push(needsReviewCount === 0
+    ? { ok: true, text: "No reports are currently flagged as needing review." }
+    : { ok: false, text: `${needsReviewCount} report${needsReviewCount === 1 ? " is" : "s are"} flagged as needing review.` });
+  items.push(structureWarnings.length === 0
+    ? { ok: true, text: "Exam structure is complete enough for export." }
+    : { ok: false, text: `${structureWarnings.length} structure warning${structureWarnings.length === 1 ? "" : "s"} remain.` });
+
+  return items;
+}
+
+function renderFinalExportChecklist() {
+  exportChecklistListEl.innerHTML = getFinalExportChecklist().map((item) => (
+    `<li class="${item.ok ? "validation-ok" : ""}">${escapeHtml(item.text)}</li>`
+  )).join("");
+}
+
+function prepareExport(action) {
+  renderValidation();
+  renderFinalExportChecklist();
+  const issueCount = getFinalExportChecklist().filter((item) => !item.ok).length;
+  if (issueCount > 0) setSaveStatus(`${action}: check ${issueCount} export checklist item${issueCount === 1 ? "" : "s"}.`);
 }
 
 function updatePupilOutputs() {
@@ -1285,7 +2083,9 @@ function updatePupilOutputs() {
   renderCohortAnalysis();
   renderSelectedFeedback();
   renderDiagnostics();
+  renderFeedbackReview();
   renderValidation();
+  renderFinalExportChecklist();
   scheduleAutosave();
 }
 
@@ -1297,7 +2097,10 @@ function rerenderAll() {
   renderCohortAnalysis();
   renderSelectedFeedback();
   renderDiagnostics();
+  renderFeedbackReview();
   renderValidation();
+  renderBulkDiagnosticControls();
+  renderFinalExportChecklist();
   scheduleAutosave();
 }
 
@@ -1342,8 +2145,14 @@ function duplicatePupil(index) {
   const duplicate = {
     id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${index}`,
     name: `${source.name} copy`,
+    classGroup: source.classGroup,
+    teacher: source.teacher,
+    grade: source.grade,
+    note: source.note,
+    feedbackSeed: source.feedbackSeed || 0,
     scores: [...source.scores],
     diagnostics: source.diagnostics.map((items) => [...items]),
+    feedbackOverride: { ...(source.feedbackOverride || {}) },
   };
   pupils.splice(index + 1, 0, duplicate);
   selectedPupilId = duplicate.id;
@@ -1379,6 +2188,20 @@ topicRowsEl.addEventListener("input", (event) => {
       pupil.scores[index] = clampMark(pupil.scores[index], questions[index].max);
     });
     renderPupilRows();
+  } else if (field === "note") {
+    questions[index].note = input.value.trim();
+  } else if (field === "group") {
+    questions[index].group = input.value.trim();
+  } else if (field === "type") {
+    const type = questionTypeOptions[input.value] ? input.value : "mixed";
+    questions[index].type = type;
+    const skills = questionTypeOptions[type].skills || [];
+    if (skills.length > 0) {
+      const current = new Set(questions[index].skills || []);
+      skills.forEach((skill) => current.add(skill));
+      questions[index].skills = [...current].filter((value) => skillOptions[value]);
+      renderTopicRows();
+    }
   } else {
     const previousTopic = questions[index].topic;
     const previousDefaults = createCommentBank(previousTopic);
@@ -1403,6 +2226,23 @@ topicRowsEl.addEventListener("input", (event) => {
 });
 
 topicRowsEl.addEventListener("change", (event) => {
+  const select = event.target.closest("select[data-topic-field='type']");
+  if (select) {
+    const index = Number(select.dataset.questionIndex);
+    if (!Number.isInteger(index)) return;
+    const type = questionTypeOptions[select.value] ? select.value : "mixed";
+    questions[index].type = type;
+    const skills = questionTypeOptions[type].skills || [];
+    if (skills.length > 0) {
+      const current = new Set(questions[index].skills || []);
+      skills.forEach((skill) => current.add(skill));
+      questions[index].skills = [...current].filter((value) => skillOptions[value]);
+      renderTopicRows();
+    }
+    updatePupilOutputs();
+    return;
+  }
+
   const checkbox = event.target.closest("[data-question-skill]");
   if (!checkbox) return;
 
@@ -1421,6 +2261,31 @@ topicRowsEl.addEventListener("change", (event) => {
 });
 
 topicRowsEl.addEventListener("click", (event) => {
+  const presetButton = event.target.closest("[data-skill-preset]");
+  if (presetButton) {
+    const index = Number(presetButton.dataset.questionIndex);
+    const preset = presetButton.dataset.skillPreset;
+    if (Number.isInteger(index) && skillPresets[preset]) {
+      const current = new Set(questions[index].skills || []);
+      skillPresets[preset].forEach((skill) => current.add(skill));
+      questions[index].skills = [...current].filter((value) => skillOptions[value]);
+      renderTopicRows();
+      updatePupilOutputs();
+    }
+    return;
+  }
+
+  const clearButton = event.target.closest("[data-clear-skills]");
+  if (clearButton) {
+    const index = Number(clearButton.dataset.clearSkills);
+    if (Number.isInteger(index)) {
+      questions[index].skills = [];
+      renderTopicRows();
+      updatePupilOutputs();
+    }
+    return;
+  }
+
   const button = event.target.closest("[data-delete-question]");
   if (!button) return;
 
@@ -1496,6 +2361,76 @@ pupilRowsEl.addEventListener("click", (event) => {
   input.addEventListener("change", renderPupilRows);
 });
 
+applyBulkNoteButton.addEventListener("click", () => {
+  const note = bulkNoteTextEl.value.trim();
+  const filteredPupils = getFilteredPupils();
+  if (!note) {
+    setSaveStatus("Add an extra note before applying it.");
+    return;
+  }
+  if (filteredPupils.length === 0) {
+    setSaveStatus("No filtered pupils to update.");
+    return;
+  }
+
+  pushUndo();
+  const filteredIds = new Set(filteredPupils.map((pupil) => pupil.id));
+  pupils = pupils.map((pupil) => filteredIds.has(pupil.id) ? {
+    ...pupil,
+    note: pupil.note?.trim() ? `${pupil.note.trim()} ${note}` : note,
+    feedbackOverride: { whatWentWell: "", evenBetterIf: "" },
+  } : pupil);
+  bulkNoteTextEl.value = "";
+  renderPupilRows();
+  renderSelectedFeedback();
+  renderFeedbackReview();
+  scheduleAutosave();
+  setSaveStatus(`Applied extra note to ${filteredIds.size} filtered pupil${filteredIds.size === 1 ? "" : "s"}.`);
+});
+
+applyBulkDiagnosticButton.addEventListener("click", () => {
+  const questionIndex = Number(bulkDiagnosticQuestionEl.value);
+  const diagnostic = bulkDiagnosticThemeEl.value;
+  const filteredPupils = getFilteredPupils();
+  if (!Number.isInteger(questionIndex) || !questions[questionIndex]) {
+    setSaveStatus("Choose a question before applying a diagnostic.");
+    return;
+  }
+  if (!diagnosticOptions[diagnostic]) {
+    setSaveStatus("Choose a diagnostic theme before applying it.");
+    return;
+  }
+  if (filteredPupils.length === 0) {
+    setSaveStatus("No filtered pupils to update.");
+    return;
+  }
+
+  pushUndo();
+  const filteredIds = new Set(filteredPupils.map((pupil) => pupil.id));
+  pupils = pupils.map((pupil) => {
+    if (!filteredIds.has(pupil.id)) return pupil;
+    const diagnostics = questions.map((_, index) => [...(pupil.diagnostics?.[index] || [])]);
+    diagnostics[questionIndex] = [...new Set([...(diagnostics[questionIndex] || []), diagnostic])].filter((value) => diagnosticOptions[value]);
+    return {
+      ...pupil,
+      diagnostics,
+      feedbackOverride: { whatWentWell: "", evenBetterIf: "" },
+    };
+  });
+  renderSelectedFeedback();
+  renderDiagnostics();
+  renderCohortAnalysis();
+  renderFeedbackReview();
+  renderFinalExportChecklist();
+  scheduleAutosave();
+  setSaveStatus(`Applied ${diagnosticOptions[diagnostic].toLowerCase()} to Q${questions[questionIndex].number} for ${filteredIds.size} filtered pupil${filteredIds.size === 1 ? "" : "s"}.`);
+});
+
+[reviewFilterEl, reviewSortEl, reviewSearchEl].forEach((input) => {
+  input.addEventListener("input", renderFeedbackReview);
+  input.addEventListener("change", renderFeedbackReview);
+});
+
 diagnosticRowsEl.addEventListener("change", (event) => {
   const checkbox = event.target.closest("[data-diagnostic-index]");
   if (!checkbox) return;
@@ -1516,7 +2451,54 @@ diagnosticRowsEl.addEventListener("change", (event) => {
   scheduleAutosave();
 });
 
-[goodThresholdEl, averageThresholdEl, feedbackLengthEl, feedbackToneEl].forEach((input) => {
+selectedPupilNoteEl.addEventListener("input", () => {
+  const pupil = pupils.find((item) => item.id === selectedPupilId);
+  if (!pupil) return;
+  pupil.note = selectedPupilNoteEl.value;
+  if (!pupil.feedbackOverride) pupil.feedbackOverride = { whatWentWell: "", evenBetterIf: "" };
+  pupil.feedbackOverride = { whatWentWell: "", evenBetterIf: "" };
+  renderSelectedFeedback();
+  renderFeedbackReview();
+  scheduleAutosave();
+});
+
+refreshWordingButton.addEventListener("click", () => {
+  const pupil = pupils.find((item) => item.id === selectedPupilId);
+  if (!pupil) return;
+  pushUndo();
+  pupil.feedbackSeed = (Number(pupil.feedbackSeed) || 0) + 1;
+  pupil.feedbackOverride = { whatWentWell: "", evenBetterIf: "" };
+  renderSelectedFeedback();
+  renderFeedbackReview();
+  setSaveStatus(`Refreshed wording for ${pupil.name}.`);
+  scheduleAutosave();
+});
+
+feedbackReviewListEl.addEventListener("input", (event) => {
+  const textarea = event.target.closest("[data-feedback-review]");
+  if (!textarea) return;
+  const pupilIndex = Number(textarea.dataset.pupilIndex);
+  const field = textarea.dataset.feedbackReview;
+  if (!Number.isInteger(pupilIndex) || !["whatWentWell", "evenBetterIf"].includes(field)) return;
+  if (!pupils[pupilIndex].feedbackOverride) pupils[pupilIndex].feedbackOverride = { whatWentWell: "", evenBetterIf: "" };
+  pupils[pupilIndex].feedbackOverride[field] = textarea.value.trim();
+  if (pupils[pupilIndex].id === selectedPupilId) renderSelectedFeedback();
+  scheduleAutosave();
+});
+
+resetFeedbackEditsButton.addEventListener("click", () => {
+  pushUndo();
+  pupils = pupils.map((pupil) => ({
+    ...pupil,
+    feedbackOverride: { whatWentWell: "", evenBetterIf: "" },
+  }));
+  renderFeedbackReview();
+  renderSelectedFeedback();
+  setSaveStatus("Cleared manual feedback edits.");
+  scheduleAutosave();
+});
+
+[goodThresholdEl, averageThresholdEl, feedbackLengthEl, feedbackToneEl, commentAvoidGradesEl, commentLimitTopicsEl, commentIncludeRevisionTaskEl, commentIncludeCohortComparisonEl].forEach((input) => {
   input.addEventListener("input", updatePupilOutputs);
   input.addEventListener("change", updatePupilOutputs);
 });
@@ -1560,6 +2542,9 @@ addPupilButton.addEventListener("click", () => {
   renderCohortAnalysis();
   renderSelectedFeedback();
   renderDiagnostics();
+  renderFeedbackReview();
+  renderValidation();
+  scheduleAutosave();
 });
 
 async function copyText(text, button) {
@@ -1641,6 +2626,25 @@ function renderSavedSlots() {
     : names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
 }
 
+function newestSavedSet() {
+  return Object.entries(getSavedSets())
+    .map(([name, state]) => ({ name, state, savedAt: Date.parse(state?.savedAt || "") || 0 }))
+    .filter((item) => item.savedAt > 0)
+    .sort((a, b) => b.savedAt - a.savedAt)[0] || null;
+}
+
+function renderAutosaveRecovery() {
+  const latest = newestSavedSet();
+  if (!latest || sessionStorage.getItem("physics-feedback-dismissed-autosave") === latest.name) {
+    autosaveRecoveryEl.classList.add("hidden");
+    return;
+  }
+
+  autosaveRecoveryTextEl.textContent = `"${latest.name}" was saved ${new Date(latest.savedAt).toLocaleString()}. Restore it if this page opened without the latest cohort data.`;
+  autosaveRecoveryEl.dataset.savedName = latest.name;
+  autosaveRecoveryEl.classList.remove("hidden");
+}
+
 function renderTemplateSlots() {
   const templateSets = getTemplateSets();
   const names = Object.keys(templateSets).sort((a, b) => a.localeCompare(b));
@@ -1672,8 +2676,7 @@ function applyTemplateState(template) {
   if (template.thresholds?.average) averageThresholdEl.value = template.thresholds.average;
   applyGradeSettings(template.grading);
   applyReportOptions(template.reportOptions);
-  if (template.feedback?.length) feedbackLengthEl.value = template.feedback.length;
-  if (template.feedback?.tone) feedbackToneEl.value = template.feedback.tone;
+  applyFeedbackSettings(template.feedback);
   rerenderAll();
 }
 
@@ -1709,8 +2712,7 @@ function applyAppState(state) {
   if (state.thresholds?.average) averageThresholdEl.value = state.thresholds.average;
   applyGradeSettings(state.grading);
   applyReportOptions(state.reportOptions);
-  if (state.feedback?.length) feedbackLengthEl.value = state.feedback.length;
-  if (state.feedback?.tone) feedbackToneEl.value = state.feedback.tone;
+  applyFeedbackSettings(state.feedback);
 
   rerenderAll();
   isApplyingState = false;
@@ -1764,7 +2766,7 @@ function printReportPack(reportPupils = pupils, titleSuffix = "") {
     <h1>${escapeHtml(`${title}${titleSuffix}`)}</h1>
     ${options.date ? `<p class="meta">Generated ${new Date().toLocaleString()}</p>` : ""}
     ${reportPupils.map((pupil) => {
-      const feedback = buildFeedbackText(pupil);
+      const feedback = finalFeedbackForPupil(pupil);
       const analysis = feedback.analysis;
       const cohortAverageCell = (question) => {
         const topicAverage = topicStats[question.index]?.average;
@@ -2217,8 +3219,11 @@ function applyExcelImport() {
       classGroup: metadata.classGroup === -1 ? "" : String(row[metadata.classGroup] || ""),
       teacher: metadata.teacher === -1 ? "" : String(row[metadata.teacher] || ""),
       grade: metadata.grade === -1 ? "" : String(row[metadata.grade] || ""),
+      note: "",
+      feedbackSeed: 0,
       scores: markColumns.map((item) => clampImportedMark(row[item.col] ?? "", item.max, `${row[metadata.name] || `Pupil ${rowIndex + 1}`} ${item.header}`)),
       diagnostics: markColumns.map(() => []),
+      feedbackOverride: { whatWentWell: "", evenBetterIf: "" },
     }));
   selectedPupilId = pupils[0]?.id;
   pendingExcelWorkbook = null;
@@ -2232,6 +3237,7 @@ function exportCsv() {
     "Pupil",
     "Class",
     "Teacher",
+    "Optional extra note",
     ...questions.map((question) => `Q${question.number}`),
     ...questions.map((question) => `Q${question.number} diagnostic`),
     "Overall %",
@@ -2240,11 +3246,12 @@ function exportCsv() {
     "Feedback",
   ];
   const rows = pupils.map((pupil) => {
-    const feedback = buildFeedbackText(pupil);
+    const feedback = finalFeedbackForPupil(pupil);
     return [
       pupil.name,
       pupil.classGroup,
       pupil.teacher,
+      pupil.note || "",
       ...pupil.scores,
       ...questions.map((_, index) => (pupil.diagnostics?.[index] || []).map((value) => diagnosticOptions[value]).join("; ")),
       feedback.analysis.overallPercentage ?? "",
@@ -2292,6 +3299,11 @@ function importCsv(text) {
   pupils = rows.slice(1).map((row, index) => ({
     id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${index}`,
     name: row[nameIndex]?.trim() || `Pupil ${index + 1}`,
+    classGroup: "",
+    teacher: "",
+    grade: "",
+    note: "",
+    feedbackSeed: 0,
     scores: questions.map((question, questionIndex) => {
       const scoreIndex = scoreIndexes[questionIndex];
       return scoreIndex === -1 ? "" : clampImportedMark(row[scoreIndex]?.trim() ?? "", Number(question.max), `${row[nameIndex] || `Pupil ${index + 1}`} Q${question.number}`);
@@ -2306,6 +3318,7 @@ function importCsv(text) {
         return matched?.[0];
       }).filter(Boolean);
     }),
+    feedbackOverride: { whatWentWell: "", evenBetterIf: "" },
   }));
   selectedPupilId = pupils[0]?.id;
   rerenderAll();
@@ -2364,6 +3377,11 @@ function importCsvWithMapping() {
   pupils = pendingCsvRows.slice(1).map((row, index) => ({
     id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${index}`,
     name: row[nameIndex]?.trim() || `Pupil ${index + 1}`,
+    classGroup: "",
+    teacher: "",
+    grade: "",
+    note: "",
+    feedbackSeed: 0,
     scores: questions.map((question, questionIndex) => {
       const scoreIndex = Number(csvMappingFieldsEl.querySelector(`[data-map-score="${questionIndex}"]`)?.value ?? -1);
       return scoreIndex === -1 ? "" : clampImportedMark(row[scoreIndex]?.trim() ?? "", Number(question.max), `${row[nameIndex] || `Pupil ${index + 1}`} Q${question.number}`);
@@ -2376,6 +3394,7 @@ function importCsvWithMapping() {
         return matched?.[0];
       }).filter(Boolean);
     }),
+    feedbackOverride: { whatWentWell: "", evenBetterIf: "" },
   }));
   selectedPupilId = pupils[0]?.id;
   pendingCsvRows = null;
@@ -2426,11 +3445,14 @@ function importExamStructure(text) {
   const headers = rows[0].map((header) => header.trim().toLowerCase());
   const questionIndex = headers.findIndex((header) => ["question", "q", "number"].includes(header));
   const topicIndex = headers.findIndex((header) => ["topic", "content"].includes(header));
+  const groupIndex = headers.findIndex((header) => ["group", "unit", "topic group", "unit group"].includes(header));
+  const typeIndex = headers.findIndex((header) => ["type", "question type"].includes(header));
   const maxIndex = headers.findIndex((header) => ["max", "marks", "maximum", "max marks"].includes(header));
   const goodIndex = headers.findIndex((header) => ["good comment", "good"].includes(header));
   const averageIndex = headers.findIndex((header) => ["average comment", "average"].includes(header));
   const badIndex = headers.findIndex((header) => ["support comment", "bad comment", "bad", "support"].includes(header));
   const skillsIndex = headers.findIndex((header) => ["skill", "skills", "question skills", "exam skills"].includes(header));
+  const noteIndex = headers.findIndex((header) => ["note", "mark note", "mark scheme note", "teacher note"].includes(header));
 
   if (topicIndex === -1 || maxIndex === -1) {
     setSaveStatus("Structure headers should include Topic and Max.");
@@ -2441,6 +3463,9 @@ function importExamStructure(text) {
   questions = rows.slice(1).map((row, index) => {
     const topic = row[topicIndex]?.trim() || `Question ${index + 1}`;
     const question = createQuestion(Number(row[questionIndex]) || index + 1, topic, Number(row[maxIndex]) || 1);
+    const importedType = String(row[typeIndex] || "").trim().toLowerCase();
+    question.group = groupIndex === -1 ? "" : String(row[groupIndex] || "").trim();
+    question.type = questionTypeOptions[importedType] ? importedType : "mixed";
     question.comments = {
       good: row[goodIndex]?.trim() || question.comments.good,
       average: row[averageIndex]?.trim() || question.comments.average,
@@ -2451,6 +3476,10 @@ function importExamStructure(text) {
       .map((item) => item.trim().toLowerCase())
       .map((item) => Object.entries(skillOptions).find(([value, label]) => item === value || item === label.toLowerCase())?.[0])
       .filter(Boolean);
+    if (question.skills.length === 0 && question.type !== "mixed") {
+      question.skills = [...(questionTypeOptions[question.type].skills || [])];
+    }
+    question.note = noteIndex === -1 ? "" : String(row[noteIndex] || "").trim();
     return question;
   });
 
@@ -2461,7 +3490,7 @@ function importExamStructure(text) {
 }
 
 function plainFeedbackForPupil(pupil) {
-  const feedback = buildFeedbackText(pupil);
+  const feedback = finalFeedbackForPupil(pupil);
   const percentage = feedback.analysis.overallPercentage === null ? "No marks yet" : `${feedback.analysis.overallPercentage}%`;
   const grade = pupil.grade || feedback.analysis.calculatedGrade || "-";
 
@@ -2488,11 +3517,13 @@ copyButton.addEventListener("click", () => {
 });
 
 copyAllButton.addEventListener("click", () => {
+  prepareExport("Copy all");
   copyText(pupils.map(plainFeedbackForPupil).join("\n\n---\n\n"), copyAllButton);
 });
 
 copyFilteredFeedbackButton.addEventListener("click", () => {
   const filteredPupils = getFilteredPupils();
+  prepareExport("Copy filtered");
   copyText(filteredPupils.map(plainFeedbackForPupil).join("\n\n---\n\n"), copyFilteredFeedbackButton);
 });
 
@@ -2501,6 +3532,7 @@ copyTeacherSummaryButton.addEventListener("click", () => {
 });
 
 printFilteredReportsButton.addEventListener("click", () => {
+  prepareExport("Print filtered");
   printReportPack(getFilteredPupils(), " filtered reports");
 });
 
@@ -2535,6 +3567,28 @@ loadDataButton.addEventListener("click", () => {
   } catch {
     setSaveStatus("Saved data could not be loaded.");
   }
+});
+
+restoreAutosaveButton.addEventListener("click", () => {
+  const name = autosaveRecoveryEl.dataset.savedName;
+  const saved = getSavedSets()[name];
+  if (!saved) {
+    setSaveStatus("Autosaved version could not be found.");
+    renderAutosaveRecovery();
+    return;
+  }
+  pushUndo();
+  applyAppState(saved);
+  saveNameInput.value = name;
+  savedSlotsSelect.value = name;
+  autosaveRecoveryEl.classList.add("hidden");
+  setSaveStatus(`Restored "${name}".`);
+});
+
+dismissAutosaveButton.addEventListener("click", () => {
+  const name = autosaveRecoveryEl.dataset.savedName;
+  if (name) sessionStorage.setItem("physics-feedback-dismissed-autosave", name);
+  autosaveRecoveryEl.classList.add("hidden");
 });
 
 undoChangeButton.addEventListener("click", restoreUndo);
@@ -2577,11 +3631,13 @@ templateSlotsSelect.addEventListener("change", () => {
 });
 
 exportCsvButton.addEventListener("click", () => {
+  prepareExport("CSV export");
   exportCsv();
   setSaveStatus("CSV exported.");
 });
 
 printReportsButton.addEventListener("click", () => {
+  prepareExport("Report pack");
   printReportPack();
 });
 
@@ -2670,8 +3726,10 @@ structureFileInput.addEventListener("change", async () => {
 });
 
 undoChangeButton.disabled = true;
+setupCollapsiblePanels();
 renderGradeBoundaries();
 renderSavedSlots();
+renderAutosaveRecovery();
 renderTemplateSlots();
 rerenderAll();
 autosaveReady = true;

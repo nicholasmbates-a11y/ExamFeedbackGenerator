@@ -33,6 +33,17 @@
           <input id="structure-file" type="file" accept=".csv,text/csv" hidden>
         </header>
 
+        <section id="autosave-recovery" class="autosave-recovery hidden" aria-live="polite">
+          <div>
+            <strong>Autosaved version available</strong>
+            <p id="autosave-recovery-text">A newer saved version is available.</p>
+          </div>
+          <div class="action-row">
+            <button id="restore-autosave" type="button" class="primary-action">Restore</button>
+            <button id="dismiss-autosave" type="button" class="secondary-action">Dismiss</button>
+          </div>
+        </section>
+
         <section class="panel controls-panel" aria-labelledby="settings-title">
           <div>
             <h2 id="settings-title">Settings</h2>
@@ -64,6 +75,17 @@
                 <option value="parent">Parent-facing</option>
               </select>
             </label>
+          </div>
+          <div class="style-preview" aria-live="polite">
+            <h3>Style preview</h3>
+            <p id="feedback-style-preview">Enter marks to preview the current feedback style.</p>
+          </div>
+          <div class="comment-controls">
+            <h3>Comment controls</h3>
+            <label><input id="comment-avoid-grades" type="checkbox"> Avoid grade references</label>
+            <label><input id="comment-limit-topics" type="checkbox"> Mention only top 2 areas</label>
+            <label><input id="comment-include-revision-task" type="checkbox" checked> Include revision task</label>
+            <label><input id="comment-include-cohort-comparison" type="checkbox"> Include cohort comparison</label>
           </div>
         </section>
 
@@ -178,6 +200,10 @@
             </div>
           </div>
           <ul id="validation-list" class="validation-list"></ul>
+          <div class="export-checklist">
+            <h3>Final export checklist</h3>
+            <ul id="export-checklist-list" class="validation-list"></ul>
+          </div>
         </section>
 
         <section class="panel" aria-labelledby="topics-title">
@@ -198,8 +224,11 @@
                 <tr>
                   <th>Question</th>
                   <th>Topic</th>
+                  <th>Unit/group</th>
+                  <th>Type</th>
                   <th>Max</th>
                   <th>Skills</th>
+                  <th>Mark note</th>
                   <th>Good comment</th>
                   <th>Average comment</th>
                   <th>Support comment</th>
@@ -228,6 +257,11 @@
               <option value="below-average">Below average threshold</option>
               <option value="diagnostics">Has diagnostics</option>
             </select>
+            <input id="bulk-note-text" type="text" placeholder="Extra note for filtered pupils" aria-label="Bulk optional extra note">
+            <button id="apply-bulk-note" type="button" class="secondary-action">Apply note</button>
+            <select id="bulk-diagnostic-question" aria-label="Bulk diagnostic question"></select>
+            <select id="bulk-diagnostic-theme" aria-label="Bulk diagnostic theme"></select>
+            <button id="apply-bulk-diagnostic" type="button" class="secondary-action">Apply diagnostic</button>
             <button id="copy-filtered-feedback" type="button" class="secondary-action">Copy filtered</button>
             <button id="print-filtered-reports" type="button" class="secondary-action">Print filtered</button>
             <span id="filter-count" class="save-status">Showing all pupils</span>
@@ -241,6 +275,33 @@
               <tbody id="pupil-rows"></tbody>
             </table>
           </div>
+        </section>
+
+        <section class="panel" aria-labelledby="review-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="review-title">Review Reports</h2>
+              <p>Edit generated WWW and EBI comments before copying or exporting reports.</p>
+            </div>
+            <button id="reset-feedback-edits" type="button" class="secondary-action">Reset edits</button>
+          </div>
+          <div class="review-tools">
+            <select id="review-filter" aria-label="Review filter">
+              <option value="all">All reports</option>
+              <option value="edited">Edited comments</option>
+              <option value="needs-review">Needs review first</option>
+              <option value="below-average">Below average threshold</option>
+              <option value="missing">Missing marks</option>
+            </select>
+            <select id="review-sort" aria-label="Review sort order">
+              <option value="default">Original order</option>
+              <option value="priority">Review priority</option>
+              <option value="lowest">Lowest score first</option>
+              <option value="missing">Most missing marks</option>
+            </select>
+            <input id="review-search" type="search" placeholder="Filter by pupil, class, or teacher" aria-label="Search review reports">
+          </div>
+          <div id="feedback-review-list" class="feedback-review-list"></div>
         </section>
 
         <section class="panel" aria-labelledby="analysis-title">
@@ -267,6 +328,49 @@
             <table class="analysis-table">
               <thead>
                 <tr>
+                  <th>Class/group</th>
+                  <th>Average</th>
+                  <th>Marked pupils</th>
+                  <th>Priority</th>
+                </tr>
+              </thead>
+              <tbody id="class-analysis-rows"></tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-wrap">
+            <table class="analysis-table">
+              <thead>
+                <tr>
+                  <th>Teacher</th>
+                  <th>Average</th>
+                  <th>Marked pupils</th>
+                  <th>Priority</th>
+                </tr>
+              </thead>
+              <tbody id="teacher-analysis-rows"></tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-wrap">
+            <table class="analysis-table">
+              <thead>
+                <tr>
+                  <th>Unit/group</th>
+                  <th>Average</th>
+                  <th>Entries</th>
+                  <th>Questions</th>
+                  <th>Pattern</th>
+                </tr>
+              </thead>
+              <tbody id="group-average-rows"></tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-wrap">
+            <table class="analysis-table">
+              <thead>
+                <tr>
                   <th>Question</th>
                   <th>Topic</th>
                   <th>Average</th>
@@ -275,6 +379,36 @@
                 </tr>
               </thead>
               <tbody id="topic-average-rows"></tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-wrap">
+            <table class="analysis-table">
+              <thead>
+                <tr>
+                  <th>Question type</th>
+                  <th>Average</th>
+                  <th>Attempts</th>
+                  <th>Questions</th>
+                  <th>Pattern</th>
+                </tr>
+              </thead>
+              <tbody id="type-average-rows"></tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-wrap">
+            <table class="analysis-table">
+              <thead>
+                <tr>
+                  <th>Skill</th>
+                  <th>Average</th>
+                  <th>Attempts</th>
+                  <th>Strong</th>
+                  <th>Priority</th>
+                </tr>
+              </thead>
+              <tbody id="skill-analysis-rows"></tbody>
             </table>
           </div>
 
@@ -336,6 +470,17 @@
             <button id="toggle-feedback" type="button" class="secondary-action feedback-toggle" aria-expanded="true">Hide</button>
           </div>
         </div>
+
+        <section class="teacher-note-panel" aria-labelledby="teacher-note-title">
+          <div class="section-heading compact-heading">
+            <div>
+              <h3 id="teacher-note-title">Optional extra note</h3>
+              <p>Added directly to this pupil's Even better if comment.</p>
+            </div>
+            <button id="refresh-wording" type="button" class="secondary-action">Refresh wording</button>
+          </div>
+          <textarea id="selected-pupil-note" placeholder="e.g. You could build confidence with practical work by rehearsing the method before starting."></textarea>
+        </section>
 
         <article id="feedback-output" class="feedback-output" aria-live="polite"></article>
         <section class="diagnostics-panel" aria-labelledby="diagnostics-title">
