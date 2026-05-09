@@ -1171,6 +1171,191 @@ function questionTypeFeedbackSentence(analysis, band) {
   return "";
 }
 
+function averageQuestionPercentage(questionsToAverage) {
+  const percentages = questionsToAverage.map((question) => question.percentage).filter((percentage) => percentage !== null);
+  return average(percentages);
+}
+
+function countPatternValues(questionsToSummarise, getValues) {
+  const counts = new Map();
+  questionsToSummarise.forEach((question) => {
+    getValues(question).filter(Boolean).forEach((value) => {
+      if (!counts.has(value)) counts.set(value, { value, questions: [] });
+      counts.get(value).questions.push(question);
+    });
+  });
+  return [...counts.values()].sort((a, b) => b.questions.length - a.questions.length);
+}
+
+function namedQuestionType(type) {
+  return (questionTypeOptions[type] || questionTypeOptions.mixed).label.toLowerCase();
+}
+
+function buildPatternCandidate(kind, label, questionsForPattern, score, extra = {}) {
+  return {
+    kind,
+    label,
+    questions: questionsForPattern,
+    count: questionsForPattern.length,
+    average: averageQuestionPercentage(questionsForPattern),
+    score,
+    ...extra,
+  };
+}
+
+function findPerformancePattern(questionsToSummarise, purpose) {
+  if (questionsToSummarise.length === 0) return null;
+  const candidates = [];
+  const minimumRepeated = questionsToSummarise.length >= 2 ? 2 : 1;
+
+  countPatternValues(questionsToSummarise, (question) => [question.group?.trim()])
+    .filter((item) => item.questions.length >= minimumRepeated)
+    .forEach((item) => {
+      candidates.push(buildPatternCandidate("group", item.value, item.questions, 30 + (item.questions.length * 9), { group: item.value }));
+    });
+
+  countPatternValues(questionsToSummarise, (question) => [question.type && question.type !== "mixed" ? question.type : ""])
+    .filter((item) => item.questions.length >= minimumRepeated)
+    .forEach((item) => {
+      candidates.push(buildPatternCandidate("type", namedQuestionType(item.value), item.questions, 28 + (item.questions.length * 9), { type: item.value }));
+    });
+
+  countPatternValues(questionsToSummarise, (question) => question.skills || [])
+    .filter((item) => item.questions.length >= minimumRepeated)
+    .forEach((item) => {
+      candidates.push(buildPatternCandidate("skill", skillPhrase(item.value), item.questions, 26 + (item.questions.length * 8), { skill: item.value }));
+    });
+
+  if (purpose === "target") {
+    countPatternValues(questionsToSummarise, (question) => question.diagnostics || [])
+      .filter((item) => item.questions.length >= 1)
+      .forEach((item) => {
+        candidates.push(buildPatternCandidate("diagnostic", diagnosticOptions[item.value], item.questions, 24 + (item.questions.length * 9), { diagnostic: item.value }));
+      });
+  }
+
+  questionsToSummarise.forEach((question) => {
+    if (!question.type || question.type === "mixed") return;
+    (question.skills || []).forEach((skill) => {
+      const matching = questionsToSummarise.filter((item) => item.type === question.type && item.skills?.includes(skill));
+      if (matching.length >= minimumRepeated) {
+        candidates.push(buildPatternCandidate(
+          "typeSkill",
+          `${namedQuestionType(question.type)} + ${skillPhrase(skill)}`,
+          matching,
+          48 + (matching.length * 10),
+          { type: question.type, skill },
+        ));
+      }
+    });
+  });
+
+  questionsToSummarise.forEach((question) => {
+    const group = question.group?.trim();
+    if (!group) return;
+    (question.skills || []).forEach((skill) => {
+      const matching = questionsToSummarise.filter((item) => item.group?.trim() === group && item.skills?.includes(skill));
+      if (matching.length >= minimumRepeated) {
+        candidates.push(buildPatternCandidate(
+          "groupSkill",
+          `${group} + ${skillPhrase(skill)}`,
+          matching,
+          46 + (matching.length * 10),
+          { group, skill },
+        ));
+      }
+    });
+  });
+
+  const uniqueCandidates = [];
+  const seen = new Set();
+  candidates.forEach((candidate) => {
+    const key = `${candidate.kind}-${candidate.label}-${candidate.questions.map((question) => question.index).join(",")}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    uniqueCandidates.push(candidate);
+  });
+
+  const best = uniqueCandidates.sort((a, b) => b.score - a.score)[0];
+  if (best) return best;
+
+  const fallbackQuestion = questionsToSummarise.slice().sort((a, b) => (
+    purpose === "strength" ? b.percentage - a.percentage : a.percentage - b.percentage
+  ))[0];
+  return buildPatternCandidate("topic", fallbackQuestion.topic, [fallbackQuestion], 10, { topic: fallbackQuestion.topic });
+}
+
+function supportingPatternDetail(pattern, purpose) {
+  if (!pattern) return "";
+  const skills = skillPerformanceSummary(pattern.questions).slice(0, 2);
+  const diagnostics = pattern.questions
+    .flatMap((question) => question.diagnostics || [])
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .slice(0, 2)
+    .map((value) => diagnosticOptions[value]?.toLowerCase())
+    .filter(Boolean);
+
+  if (purpose === "strength" && skills.length > 0) {
+    return `This suggests confidence with ${formatTopicList(skills)}.`;
+  }
+  if (purpose === "target" && diagnostics.length > 0) {
+    return `The repeated issue was ${formatTopicList(diagnostics)}.`;
+  }
+  if (purpose === "target" && skills.length > 0) {
+    return `The skill to practise is ${formatTopicList(skills)}.`;
+  }
+  return "";
+}
+
+function patternSentence(pattern, purpose, seed) {
+  if (!pattern) return "";
+  const questionText = pattern.count > 1
+    ? `${pattern.count} questions`
+    : `Q${pattern.questions[0].number}`;
+  const typeLabel = pattern.type ? namedQuestionType(pattern.type) : "";
+  const skillText = pattern.skill ? skillPhrase(pattern.skill) : "";
+  const diagnosticText = pattern.diagnostic ? diagnosticOptions[pattern.diagnostic]?.toLowerCase() : "";
+
+  if (purpose === "strength") {
+    if (pattern.kind === "typeSkill") {
+      return pickVariant([
+        `You were most secure on ${typeLabel}-style questions, especially where ${skillText} was needed.`,
+        `The clearest strength was ${typeLabel}-style work involving ${skillText}.`,
+      ], seed);
+    }
+    if (pattern.kind === "groupSkill") return `${pattern.group} was secure, particularly on questions involving ${skillText}.`;
+    if (pattern.kind === "type") return `You handled ${typeLabel}-style questions well across the paper.`;
+    if (pattern.kind === "skill") return `A repeated strength was ${pattern.label}, which supported your answers across ${questionText}.`;
+    if (pattern.kind === "group") return `${pattern.group} was the strongest area across the paper.`;
+    return `Your strongest individual area was ${pattern.label}.`;
+  }
+
+  if (pattern.kind === "typeSkill") {
+    return pickVariant([
+      `${sentenceCase(typeLabel)}-style questions are the main area to develop, especially where ${skillText} is required.`,
+      `To gain more marks, focus on ${typeLabel}-style questions that involve ${skillText}.`,
+    ], seed);
+  }
+  if (pattern.kind === "groupSkill") return `${pattern.group} needs more attention, particularly questions involving ${skillText}.`;
+  if (pattern.kind === "type") return `${sentenceCase(typeLabel)}-style questions need more focused practice.`;
+  if (pattern.kind === "skill") return `The main skill to develop is ${pattern.label}.`;
+  if (pattern.kind === "diagnostic") return `The clearest exam-skill issue was ${diagnosticText}.`;
+  if (pattern.kind === "group") return `${pattern.group} is the main content area to revisit.`;
+  return `The main individual area to revisit is ${pattern.label}.`;
+}
+
+function buildFeedbackPlan(analysis, settings) {
+  const topicLimit = settings.limitTopics ? 2 : 4;
+  const strengthQuestions = (analysis.goodTopics.length > 0 ? analysis.goodTopics : analysis.averageTopics.slice(0, 2)).slice(0, topicLimit);
+  const targetQuestions = [...analysis.badTopics, ...analysis.averageTopics].slice(0, topicLimit);
+  return {
+    strengthQuestions,
+    targetQuestions,
+    strengthPattern: findPerformancePattern(strengthQuestions, "strength"),
+    targetPattern: findPerformancePattern(targetQuestions, "target"),
+  };
+}
+
 function nextTasksForPupil(pupil) {
   const analysis = analysePupil(pupil);
   if (analysis.marked.length === 0) return ["Enter marks to generate personalised next tasks."];
@@ -1268,50 +1453,6 @@ function buildFeedbackText(pupil) {
   const settings = getFeedbackSettings();
   const toneSetting = toneOptions[settings.tone] || toneOptions.encouraging;
   const analysis = analysePupil(pupil);
-  const topicLimit = settings.limitTopics ? 2 : 4;
-  const secureTopics = (analysis.goodTopics.length > 0 ? analysis.goodTopics : analysis.averageTopics.slice(0, 2)).slice(0, topicLimit);
-  const targetTopics = [...analysis.badTopics, ...analysis.averageTopics].slice(0, topicLimit);
-  const secureTopicNames = summariseQuestionAreas(secureTopics);
-  const targetTopicNames = summariseQuestionAreas(targetTopics);
-  const secureSkillNames = skillPerformanceSummary(analysis.goodTopics).slice(0, 3);
-  const targetSkillNames = skillPerformanceSummary(analysis.badTopics).slice(0, 3);
-  const strengthDetails = secureTopics
-    .slice(0, 3);
-  const targetDetails = targetTopics
-    .slice(0, 3);
-  const strengthCommentDetails = mergeQuestionComments(strengthDetails);
-  const targetCommentDetails = mergeQuestionComments(targetDetails);
-  const diagnosticDetails = analysis.marked
-    .filter((question) => question.diagnostics?.length > 0)
-    .slice(0, 2)
-    .map((question) => `For ${question.topic}, the main issue was ${diagnosticPhrase(question.diagnostics)}.`)
-    .join(" ");
-  const diagnosticTasks = analysis.marked
-    .flatMap((question) => question.diagnostics || [])
-    .filter((value, index, values) => values.indexOf(value) === index)
-    .slice(0, 2)
-    .map(diagnosticRevisionTask);
-  const diagnosticTaskText = diagnosticTasks.length > 0
-    ? `A precise exam-skill task is to ${formatTopicList(diagnosticTasks)}.`
-    : "";
-  const gradeNudge = settings.avoidGrades ? "" : gradeFeedbackNudge(analysis);
-  const cohortComparison = settings.includeCohortComparison && analysis.overallPercentage !== null
-    ? cohortComparisonSentence(pupil, analysis)
-    : "";
-  const secureTypeFeedback = questionTypeFeedbackSentence(analysis, "good");
-  const targetTypeFeedback = questionTypeFeedbackSentence(analysis, "bad");
-  const examSkills = examSkillTarget(analysis);
-  const secureNotes = analysis.goodTopics
-    .filter((question) => question.note)
-    .slice(0, 2)
-    .map((question) => `You handled the important detail in Q${question.number}: ${question.note}.`)
-    .join(" ");
-  const targetNotes = analysis.badTopics
-    .filter((question) => question.note)
-    .slice(0, 2)
-    .map((question) => `For Q${question.number}, remember: ${question.note}.`)
-    .join(" ");
-  const extraNote = ensureSentence(pupil.note || "");
 
   if (analysis.marked.length === 0) {
     return {
@@ -1322,46 +1463,62 @@ function buildFeedbackText(pupil) {
   }
 
   const seed = `${pupil.name}-${analysis.overallPercentage}-${settings.tone}-${pupil.feedbackSeed || 0}`;
-  const strengthLead = pickVariant([
-    "A clear strength was",
-    "You were most secure on",
-    "The best evidence of understanding came from",
-  ], seed);
-  const targetLead = pickVariant([
-    "The main area to develop is",
-    "A good next step is to focus on",
-    "To pick up more marks, prioritise",
-  ], `${seed}-target`);
-  const skillBridge = pickVariant([
-    "This also points to confidence with",
-    "That suggests you are using",
-    "Keep applying",
-  ], `${seed}-skill`);
-  const taskBridge = pickVariant([
-    "A useful revision task would be to",
-    "To make this more secure,",
-    "For practice,",
-  ], `${seed}-task`);
+  const plan = buildFeedbackPlan(analysis, settings);
+  const strengthPatternSentence = patternSentence(plan.strengthPattern, "strength", `${seed}-strength-pattern`);
+  const targetPatternSentence = patternSentence(plan.targetPattern, "target", `${seed}-target-pattern`);
+  const strengthDetail = supportingPatternDetail(plan.strengthPattern, "strength");
+  const targetDetail = supportingPatternDetail(plan.targetPattern, "target");
+  const strengthCommentDetails = plan.strengthPattern?.kind === "topic" ? mergeQuestionComments(plan.strengthPattern.questions) : "";
+  const targetCommentDetails = plan.targetPattern?.kind === "topic" ? mergeQuestionComments(plan.targetPattern.questions) : "";
+  const targetNotes = plan.targetQuestions
+    .filter((question) => question.note)
+    .slice(0, 1)
+    .map((question) => `For Q${question.number}, remember: ${question.note}.`)
+    .join(" ");
+  const diagnosticTasks = plan.targetQuestions
+    .flatMap((question) => question.diagnostics || [])
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .slice(0, 1)
+    .map(diagnosticRevisionTask);
+  const diagnosticTaskText = diagnosticTasks.length > 0
+    ? `A precise exam-skill task is to ${diagnosticTasks[0]}.`
+    : "";
+  const diagnosticDetails = analysis.marked
+    .filter((question) => question.diagnostics?.length > 0)
+    .slice(0, 1)
+    .map((question) => `For ${question.topic}, the main issue was ${diagnosticPhrase(question.diagnostics)}.`)
+    .join(" ");
+  const patternTask = plan.targetPattern?.skill
+    ? skillRevisionTask(skillPhrase(plan.targetPattern.skill))
+    : plan.targetPattern?.diagnostic
+      ? diagnosticRevisionTask(plan.targetPattern.diagnostic)
+      : "";
+  const revisionTaskText = settings.includeRevisionTask && patternTask
+    ? `A useful revision task would be to ${patternTask}.`
+    : "";
+  const gradeNudge = settings.avoidGrades ? "" : gradeFeedbackNudge(analysis);
+  const cohortComparison = settings.includeCohortComparison && analysis.overallPercentage !== null
+    ? cohortComparisonSentence(pupil, analysis)
+    : "";
+  const examSkills = plan.targetPattern?.diagnostic ? "" : examSkillTarget(analysis);
+  const extraNote = ensureSentence(pupil.note || "");
 
-  const wwwSentences = secureTopics.length > 0
+  const wwwSentences = plan.strengthQuestions.length > 0
     ? [
-      `${applyTone(analysis.tone.opener, settings)} ${strengthLead} ${formatTopicList(secureTopicNames)}.`,
-      secureSkillNames.length > 0 ? `${skillBridge} ${formatTopicList(secureSkillNames)}.` : "",
-      secureTypeFeedback,
+      applyTone(analysis.tone.opener, settings),
+      strengthPatternSentence,
+      strengthDetail,
       strengthCommentDetails,
-      secureNotes,
     ]
     : [analysis.tone.opener, analysis.tone.fallbackWin];
 
-  const ebiSentences = targetTopics.length > 0
+  const ebiSentences = plan.targetQuestions.length > 0
     ? [
-      `${toneSetting.targetLead}, ${targetLead} ${formatTopicList(targetTopicNames)}.`,
-      targetTypeFeedback,
-      targetSkillNames.length > 0 ? `The pattern in your marks suggests ${formatTopicList(targetSkillNames)} should be a focus.` : "",
-      settings.includeRevisionTask && targetSkillNames.length > 0 ? `${taskBridge} ${skillRevisionTask(targetSkillNames[0])}.` : "",
+      `${toneSetting.targetLead}, ${targetPatternSentence.charAt(0).toLowerCase()}${targetPatternSentence.slice(1)}`,
+      targetDetail,
+      revisionTaskText,
       targetCommentDetails,
       targetNotes,
-      diagnosticDetails,
       settings.includeRevisionTask ? diagnosticTaskText : "",
       examSkills,
       gradeNudge,
