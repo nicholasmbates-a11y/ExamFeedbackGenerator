@@ -11,7 +11,7 @@
       <section class="workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Sixth Form Physics</p>
+            <p class="eyebrow">Physics</p>
             <h1>Cohort Exam Feedback Generator</h1>
           </div>
           <div class="action-row">
@@ -44,7 +44,39 @@
           </div>
         </section>
 
-        <section class="panel controls-panel" aria-labelledby="settings-title">
+        <section class="panel setup-guide" aria-labelledby="setup-guide-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="setup-guide-title">Quick Start</h2>
+              <p>Work through these four steps to produce feedback for a cohort.</p>
+            </div>
+            <button id="toggle-advanced" type="button" class="secondary-action" aria-pressed="false">Show advanced tools</button>
+          </div>
+          <div class="setup-steps">
+            <button type="button" class="setup-step" data-guide-action="import">
+              <span>1</span>
+              <strong>Import marks</strong>
+              <small id="guide-import-status">Choose a spreadsheet</small>
+            </button>
+            <button type="button" class="setup-step" data-guide-target="exam-structure-panel">
+              <span>2</span>
+              <strong>Check structure</strong>
+              <small id="guide-structure-status">Review questions</small>
+            </button>
+            <button type="button" class="setup-step" data-guide-target="review-reports-panel">
+              <span>3</span>
+              <strong>Review comments</strong>
+              <small id="guide-review-status">Check generated feedback</small>
+            </button>
+            <button type="button" class="setup-step" data-guide-target="ai-feedback-title">
+              <span>4</span>
+              <strong>Prepare output</strong>
+              <small id="guide-export-status">Create the Firefly prompt</small>
+            </button>
+          </div>
+        </section>
+
+        <section class="panel controls-panel advanced-panel" aria-labelledby="settings-title">
           <div>
             <h2 id="settings-title">Settings</h2>
             <p>Set the topic boundaries for the whole cohort. <span id="save-status" class="save-status">Not saved yet</span></p>
@@ -89,7 +121,7 @@
           </div>
         </section>
 
-        <section class="panel grading-panel" aria-labelledby="grading-title">
+        <section class="panel grading-panel advanced-panel" aria-labelledby="grading-title">
           <div>
             <h2 id="grading-title">Grades</h2>
             <p>Choose a grading scale, edit the lower boundary for each grade, or suggest boundaries from the cohort distribution.</p>
@@ -131,7 +163,7 @@
           </div>
         </section>
 
-        <section class="panel controls-panel" aria-labelledby="templates-title">
+        <section class="panel controls-panel advanced-panel" aria-labelledby="templates-title">
           <div>
             <h2 id="templates-title">Templates</h2>
             <p>Save locally, or share exam structures and complete templates without pupil data.</p>
@@ -149,12 +181,13 @@
         <section id="csv-mapping-panel" class="panel mapping-panel hidden" aria-labelledby="mapping-title">
           <div class="section-heading">
             <div>
-              <h2 id="mapping-title">Import Mapping</h2>
-              <p>Match markbook columns to pupil names, question scores, and optional diagnostics.</p>
+              <h2 id="mapping-title">Review CSV Import</h2>
+              <p>Match the columns, then check the detected pupils and questions before importing.</p>
             </div>
             <button id="apply-csv-mapping" type="button" class="primary-action">Apply import</button>
           </div>
           <div id="csv-mapping-fields" class="mapping-grid"></div>
+          <div id="csv-import-preview" class="import-confirmation" aria-live="polite"></div>
         </section>
 
         <section id="excel-preview-panel" class="panel mapping-panel hidden" aria-labelledby="excel-preview-title">
@@ -171,6 +204,7 @@
             <li data-excel-step="0" class="active">1 Sheet</li>
             <li data-excel-step="1">2 Pupils</li>
             <li data-excel-step="2">3 Questions</li>
+            <li data-excel-step="3">4 Confirm</li>
           </ol>
           <div id="excel-preview-summary" class="summary-grid"></div>
           <div id="excel-wizard-stage" class="wizard-stage"></div>
@@ -194,7 +228,7 @@
           </div>
         </section>
 
-        <section class="panel validation-panel" aria-labelledby="validation-title">
+        <section class="panel validation-panel advanced-panel" aria-labelledby="validation-title">
           <div class="section-heading">
             <div>
               <h2 id="validation-title">Validation</h2>
@@ -208,7 +242,7 @@
           </div>
         </section>
 
-        <section class="panel" aria-labelledby="topics-title">
+        <section id="exam-structure-panel" class="panel" aria-labelledby="topics-title">
           <div class="section-heading">
             <div>
               <h2 id="topics-title">Exam Structure</h2>
@@ -238,7 +272,7 @@
           </div>
         </section>
 
-        <section class="panel" aria-labelledby="cohort-title">
+        <section id="cohort-marks-panel" class="panel" aria-labelledby="cohort-title">
           <div class="section-heading">
             <div>
               <h2 id="cohort-title">Cohort Marks</h2>
@@ -247,7 +281,7 @@
             <button id="add-pupil" type="button" class="primary-action">Add pupil</button>
           </div>
 
-          <div class="cohort-tools">
+          <div class="cohort-tools advanced-panel">
             <input id="pupil-search" type="search" placeholder="Search pupils" aria-label="Search pupils">
             <select id="pupil-filter" aria-label="Filter pupils">
               <option value="all">All pupils</option>
@@ -275,7 +309,7 @@
           </div>
         </section>
 
-        <section class="panel" aria-labelledby="review-title">
+        <section id="review-reports-panel" class="panel" aria-labelledby="review-title">
           <div class="section-heading">
             <div>
               <h2 id="review-title">Review Reports</h2>
@@ -302,7 +336,7 @@
           <div id="feedback-review-list" class="feedback-review-list"></div>
         </section>
 
-        <section class="panel" aria-labelledby="analysis-title">
+        <section class="panel advanced-panel" aria-labelledby="analysis-title">
           <div class="section-heading">
             <div>
               <h2 id="analysis-title">Cohort Analysis</h2>
@@ -591,7 +625,7 @@
           <p id="ai-feedback-status" class="save-status">Paste the generated prompt into ChatGPT, then review the returned comments before using them.</p>
           <textarea id="ai-prompt-output" class="ai-prompt-output" readonly hidden></textarea>
         </section>
-        <section class="diagnostics-panel" aria-labelledby="diagnostics-title">
+        <section class="diagnostics-panel advanced-panel" aria-labelledby="diagnostics-title">
           <h3 id="diagnostics-title">Pupil diagnostics</h3>
           <div id="diagnostic-rows" class="diagnostic-rows"></div>
         </section>

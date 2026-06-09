@@ -120,7 +120,7 @@ function createQuestion(number, topic, max) {
     number,
     topic,
     max,
-    type: "mixed",
+    type: "",
     group: "",
     skills: [],
     note: "",
@@ -131,7 +131,7 @@ function createQuestion(number, topic, max) {
 function cloneQuestions() {
   return defaultQuestions.map((question) => ({
     ...question,
-    type: question.type || "mixed",
+    type: question.type || "",
     group: question.group || "",
     skills: [...(question.skills || [])],
     note: question.note || "",
@@ -170,6 +170,12 @@ const pupilRowsEl = document.querySelector("#pupil-rows");
 const pupilScoreHeadEl = document.querySelector("#pupil-score-head");
 const appShellEl = document.querySelector(".app-shell");
 const feedbackPanelEl = document.querySelector(".feedback-panel");
+const toggleAdvancedButton = document.querySelector("#toggle-advanced");
+const setupGuideEl = document.querySelector(".setup-guide");
+const guideImportStatusEl = document.querySelector("#guide-import-status");
+const guideStructureStatusEl = document.querySelector("#guide-structure-status");
+const guideReviewStatusEl = document.querySelector("#guide-review-status");
+const guideExportStatusEl = document.querySelector("#guide-export-status");
 const cohortSummaryEl = document.querySelector("#cohort-summary");
 const teacherSummaryEl = document.querySelector("#teacher-summary");
 const copyTeacherSummaryButton = document.querySelector("#copy-teacher-summary");
@@ -272,6 +278,7 @@ const copyFilteredFeedbackButton = document.querySelector("#copy-filtered-feedba
 const printFilteredReportsButton = document.querySelector("#print-filtered-reports");
 const csvMappingPanelEl = document.querySelector("#csv-mapping-panel");
 const csvMappingFieldsEl = document.querySelector("#csv-mapping-fields");
+const csvImportPreviewEl = document.querySelector("#csv-import-preview");
 const applyCsvMappingButton = document.querySelector("#apply-csv-mapping");
 const excelPreviewPanelEl = document.querySelector("#excel-preview-panel");
 const excelSheetSelectEl = document.querySelector("#excel-sheet-select");
@@ -300,7 +307,7 @@ function normaliseQuestion(question, index) {
     number,
     topic,
     max: Math.max(Number(question.max) || 1, 1),
-    type: questionTypeOptions[question.type] ? question.type : "mixed",
+    type: questionTypeOptions[question.type] ? question.type : "",
     group: String(question.group || ""),
     skills: Array.isArray(question.skills) ? question.skills.filter((skill) => skillOptions[skill]) : [],
     note: String(question.note || ""),
@@ -1011,6 +1018,43 @@ function setupCollapsiblePanels() {
       button.setAttribute("aria-expanded", "false");
     }
   });
+}
+
+function setAdvancedMode(enabled) {
+  document.body.classList.toggle("advanced-mode", enabled);
+  toggleAdvancedButton.textContent = enabled ? "Hide advanced tools" : "Show advanced tools";
+  toggleAdvancedButton.setAttribute("aria-pressed", String(enabled));
+}
+
+function updateSetupGuide() {
+  const markedPupils = pupils.filter((pupil) => analysePupil(pupil).marked.length > 0).length;
+  const completePupils = pupils.filter((pupil) => {
+    const analysis = analysePupil(pupil);
+    return analysis.marked.length === questions.length && questions.length > 0;
+  }).length;
+  const structuredQuestions = questions.filter((question) => (
+    question.topic.trim()
+    && Number(question.max) > 0
+    && Boolean(question.type)
+    && question.skills.length > 0
+  )).length;
+
+  guideImportStatusEl.textContent = markedPupils > 0
+    ? `${markedPupils}/${pupils.length} pupils have marks`
+    : "Choose a spreadsheet";
+  guideStructureStatusEl.textContent = `${structuredQuestions}/${questions.length} questions fully described`;
+  guideReviewStatusEl.textContent = completePupils > 0
+    ? `${completePupils}/${pupils.length} comments ready`
+    : "Add marks to create comments";
+  guideExportStatusEl.textContent = completePupils === pupils.length && pupils.length > 0
+    ? "Ready to create the Firefly prompt"
+    : `${completePupils}/${pupils.length} complete pupils`;
+
+  const steps = setupGuideEl.querySelectorAll(".setup-step");
+  steps[0]?.classList.toggle("is-ready", markedPupils > 0);
+  steps[1]?.classList.toggle("is-ready", structuredQuestions === questions.length && questions.length > 0);
+  steps[2]?.classList.toggle("is-ready", completePupils > 0);
+  steps[3]?.classList.toggle("is-ready", completePupils === pupils.length && pupils.length > 0);
 }
 
 function setupAnalysisBlocks() {
@@ -1906,6 +1950,7 @@ function renderBulkDiagnosticControls() {
 function questionTypeSelect(question, index) {
   return `
     <select data-topic-field="type" data-question-index="${index}" aria-label="Question ${question.number} type">
+      <option value="" ${question.type ? "" : "selected"} disabled>Select type</option>
       ${Object.entries(questionTypeOptions).map(([value, option]) => `
         <option value="${value}" ${question.type === value ? "selected" : ""}>${escapeHtml(option.label)}</option>
       `).join("")}
@@ -2511,7 +2556,7 @@ function renderDiagnostics() {
 
   diagnosticRowsEl.innerHTML = questions.map((question, questionIndex) => `
     <fieldset>
-      <legend>Q${question.number} · ${escapeHtml(questionTypeOptions[question.type]?.label || "Mixed")}</legend>
+      <legend>Q${question.number} · ${escapeHtml(questionTypeOptions[question.type]?.label || "Type not selected")}</legend>
       ${orderedDiagnosticsForQuestion(question).map(([value, label]) => `
         <label>
           <input
@@ -2540,7 +2585,7 @@ function getValidationWarnings() {
   )).length;
   const noGroup = questions.filter((question) => !question.group?.trim()).length;
   const noSkills = questions.filter((question) => !question.skills?.length).length;
-  const mixedTypes = questions.filter((question) => !question.type || question.type === "mixed").length;
+  const missingTypes = questions.filter((question) => !question.type).length;
   const invalidThresholds = Number(averageThresholdEl.value) >= Number(goodThresholdEl.value);
   const gradeSettings = getGradeSettings();
   const gradeBoundaries = getActiveGradeScale().grades.map((grade) => gradeSettings.boundaries[grade]);
@@ -2551,7 +2596,7 @@ function getValidationWarnings() {
   if (missingMarks > 0) warnings.push(`${missingMarks} mark cell${missingMarks === 1 ? " is" : "s are"} empty across ${incompletePupils} pupil${incompletePupils === 1 ? "" : "s"}.`);
   if (emptyComments > 0) warnings.push(`${emptyComments} question${emptyComments === 1 ? " has" : "s have"} an empty comment-bank field.`);
   if (noGroup > 0) warnings.push(`${noGroup} question${noGroup === 1 ? " has" : "s have"} no unit/group set.`);
-  if (mixedTypes > 0) warnings.push(`${mixedTypes} question${mixedTypes === 1 ? " is" : "s are"} still set to Mixed question type.`);
+  if (missingTypes > 0) warnings.push(`${missingTypes} question${missingTypes === 1 ? " needs" : "s need"} a question type selected.`);
   if (noSkills > 0) warnings.push(`${noSkills} question${noSkills === 1 ? " has" : "s have"} no skills tagged.`);
   if (invalidThresholds) warnings.push("Average threshold should be lower than the good threshold.");
   if (invalidGradeBoundaries) warnings.push("Grade boundaries should descend from the highest grade to the lowest grade.");
@@ -2652,6 +2697,7 @@ function updatePupilOutputs() {
   renderFeedbackReview();
   renderValidation();
   renderFinalExportChecklist();
+  updateSetupGuide();
   scheduleAutosave();
 }
 
@@ -2667,6 +2713,7 @@ function rerenderAll() {
   renderValidation();
   renderBulkDiagnosticControls();
   renderFinalExportChecklist();
+  updateSetupGuide();
   scheduleAutosave();
 }
 
@@ -2759,9 +2806,9 @@ topicRowsEl.addEventListener("input", (event) => {
   } else if (field === "group") {
     questions[index].group = input.value.trim();
   } else if (field === "type") {
-    const type = questionTypeOptions[input.value] ? input.value : "mixed";
+    const type = questionTypeOptions[input.value] ? input.value : "";
     questions[index].type = type;
-    const skills = questionTypeOptions[type].skills || [];
+    const skills = questionTypeOptions[type]?.skills || [];
     if (skills.length > 0) {
       const current = new Set(questions[index].skills || []);
       skills.forEach((skill) => current.add(skill));
@@ -2796,9 +2843,9 @@ topicRowsEl.addEventListener("change", (event) => {
   if (select) {
     const index = Number(select.dataset.questionIndex);
     if (!Number.isInteger(index)) return;
-    const type = questionTypeOptions[select.value] ? select.value : "mixed";
+    const type = questionTypeOptions[select.value] ? select.value : "";
     questions[index].type = type;
-    const skills = questionTypeOptions[type].skills || [];
+    const skills = questionTypeOptions[type]?.skills || [];
     if (skills.length > 0) {
       const current = new Set(questions[index].skills || []);
       skills.forEach((skill) => current.add(skill));
@@ -3371,7 +3418,7 @@ function exportExamStructureCsv() {
     question.number,
     question.topic,
     question.group || "",
-    question.type || "mixed",
+    question.type || "",
     question.max,
     (question.skills || []).map((skill) => skillOptions[skill] || skill).join("; "),
     question.note || "",
@@ -3825,8 +3872,8 @@ function renderExcelWizardStage(sheetInfo, rows, decisions, sheetState) {
   const importColumns = decisions.filter((item) => item.enabled);
   renderExcelWizardSteps(step);
   excelBackButton.disabled = step === 0;
-  excelNextButton.hidden = step === 2;
-  applyExcelImportButton.hidden = step !== 2;
+  excelNextButton.hidden = step === 3;
+  applyExcelImportButton.hidden = step !== 3;
   applyExcelImportButton.disabled = importColumns.length === 0;
 
   if (step === 0) {
@@ -3869,6 +3916,32 @@ function renderExcelWizardStage(sheetInfo, rows, decisions, sheetState) {
           Grade
           <select data-excel-meta="grade">${excelColumnOptions(rows, metadata.grade, true, headerRow)}</select>
         </label>
+      </div>
+    `;
+    return;
+  }
+
+  if (step === 3) {
+    const pupilNames = rows
+      .slice(sheetState.layout.dataStartRow)
+      .filter((row) => excelRowHasPupil(row, sheetState.metadata))
+      .map((row, index) => excelPupilName(row, sheetState.metadata, `Pupil ${index + 1}`));
+    excelWizardStageEl.innerHTML = `
+      <div class="import-confirmation">
+        <h3>Ready to import</h3>
+        <p>This will replace the current cohort with <strong>${pupilNames.length} pupils</strong> and <strong>${importColumns.length} questions</strong> from <strong>${escapeHtml(sheetInfo.name)}</strong>.</p>
+        <div>
+          <strong>Pupil examples</strong>
+          <div class="import-confirmation-list">
+            ${pupilNames.slice(0, 6).map((name) => `<span>${escapeHtml(name)}</span>`).join("") || "<span>No pupil names detected</span>"}
+          </div>
+        </div>
+        <div>
+          <strong>Questions to import</strong>
+          <div class="import-confirmation-list">
+            ${importColumns.map((item) => `<span>${escapeHtml(item.header)} / ${item.max}</span>`).join("") || "<span>No questions selected</span>"}
+          </div>
+        </div>
       </div>
     `;
     return;
@@ -4117,7 +4190,37 @@ function showCsvMapping(rows) {
     }).join("")}
   `;
   csvMappingPanelEl.classList.remove("hidden");
-  setSaveStatus("Map the CSV columns, then apply import.");
+  renderCsvImportConfirmation();
+  setSaveStatus("Review the detected CSV columns and pupil examples before importing.");
+}
+
+function renderCsvImportConfirmation() {
+  if (!pendingCsvRows) return;
+  const nameIndex = Number(csvMappingFieldsEl.querySelector("[data-map-field='name']")?.value ?? -1);
+  const selectedQuestions = questions.flatMap((question, questionIndex) => {
+    const scoreIndex = Number(csvMappingFieldsEl.querySelector(`[data-map-score="${questionIndex}"]`)?.value ?? -1);
+    return scoreIndex === -1 ? [] : [{ question, scoreIndex }];
+  });
+  const pupilNames = nameIndex === -1
+    ? []
+    : pendingCsvRows.slice(1).map((row) => String(row[nameIndex] || "").trim()).filter(Boolean);
+
+  csvImportPreviewEl.innerHTML = `
+    <h3>Import check</h3>
+    <p>This will replace the current cohort with <strong>${pupilNames.length} pupils</strong>. ${selectedQuestions.length} question columns are selected.</p>
+    <div>
+      <strong>Pupil examples</strong>
+      <div class="import-confirmation-list">
+        ${pupilNames.slice(0, 6).map((name) => `<span>${escapeHtml(name)}</span>`).join("") || "<span>Choose the pupil-name column</span>"}
+      </div>
+    </div>
+    <div>
+      <strong>Question columns</strong>
+      <div class="import-confirmation-list">
+        ${selectedQuestions.map(({ question }) => `<span>Q${question.number}: ${escapeHtml(question.topic)}</span>`).join("") || "<span>No question columns selected</span>"}
+      </div>
+    </div>
+  `;
 }
 
 function importCsvWithMapping() {
@@ -4221,7 +4324,7 @@ function importExamStructure(text) {
     const question = createQuestion(Number(row[questionIndex]) || index + 1, topic, Number(row[maxIndex]) || 1);
     const importedType = String(row[typeIndex] || "").trim().toLowerCase();
     question.group = groupIndex === -1 ? "" : String(row[groupIndex] || "").trim();
-    question.type = questionTypeOptions[importedType] ? importedType : "mixed";
+    question.type = questionTypeOptions[importedType] ? importedType : "";
     question.comments = {
       good: row[goodIndex]?.trim() || question.comments.good,
       average: row[averageIndex]?.trim() || question.comments.average,
@@ -4232,7 +4335,7 @@ function importExamStructure(text) {
       .map((item) => item.trim().toLowerCase())
       .map((item) => Object.entries(skillOptions).find(([value, label]) => item === value || item === label.toLowerCase())?.[0])
       .filter(Boolean);
-    if (question.skills.length === 0 && question.type !== "mixed") {
+    if (question.skills.length === 0 && question.type && question.type !== "mixed") {
       question.skills = [...(questionTypeOptions[question.type].skills || [])];
     }
     question.note = noteIndex === -1 ? "" : String(row[noteIndex] || "").trim();
@@ -4445,6 +4548,39 @@ csvFileInput.addEventListener("change", async () => {
 });
 
 applyCsvMappingButton.addEventListener("click", importCsvWithMapping);
+csvMappingFieldsEl.addEventListener("change", renderCsvImportConfirmation);
+
+toggleAdvancedButton.addEventListener("click", () => {
+  setAdvancedMode(!document.body.classList.contains("advanced-mode"));
+});
+
+setupGuideEl.addEventListener("click", (event) => {
+  const step = event.target.closest(".setup-step");
+  if (!step) return;
+  if (step.dataset.guideAction === "import") {
+    csvFileInput.click();
+    return;
+  }
+
+  const target = document.getElementById(step.dataset.guideTarget);
+  if (!target) return;
+  const panel = target.closest(".panel");
+  if (panel?.classList.contains("is-collapsed")) {
+    panel.classList.remove("is-collapsed");
+    const toggle = panel.querySelector(":scope > .panel-collapse-header .panel-collapse-toggle");
+    if (toggle) {
+      toggle.textContent = "Hide";
+      toggle.setAttribute("aria-expanded", "true");
+    }
+  }
+  if (target.id === "ai-feedback-title" && feedbackPanelEl.classList.contains("collapsed")) {
+    feedbackPanelEl.classList.remove("collapsed");
+    appShellEl.classList.remove("feedback-collapsed");
+    toggleFeedbackButton.textContent = "Hide";
+    toggleFeedbackButton.setAttribute("aria-expanded", "true");
+  }
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 
 excelSheetSelectEl.addEventListener("change", () => {
   renderExcelPreview(Number(excelSheetSelectEl.value));
@@ -4460,7 +4596,7 @@ excelBackButton.addEventListener("click", () => {
 excelNextButton.addEventListener("click", () => {
   if (!pendingExcelWorkbook?.current) return;
   const { sheetIndex, sheetState } = pendingExcelWorkbook.current;
-  sheetState.step = Math.min(sheetState.step + 1, 2);
+  sheetState.step = Math.min(sheetState.step + 1, 3);
   renderExcelPreview(sheetIndex);
 });
 
@@ -4502,6 +4638,7 @@ structureFileInput.addEventListener("change", async () => {
 });
 
 undoChangeButton.disabled = true;
+setAdvancedMode(false);
 setupCollapsiblePanels();
 setupAnalysisBlocks();
 renderGradeBoundaries();
