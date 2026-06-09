@@ -458,7 +458,7 @@ function diagnosticPhrase(values) {
 
 function diagnosticRevisionTask(value) {
   const tasks = {
-    calculation: "write out the equation, substitution, rearrangement, answer, and unit for three similar calculations",
+    calculation: "complete three calculation practice questions using this layout consistently",
     explanation: "rewrite two explanations with the mark-scheme key terms highlighted",
     units: "complete a short units and prefixes drill before attempting the next calculation set",
     technique: "underline the command word and annotate what the question is asking before answering",
@@ -505,7 +505,7 @@ function skillRevisionTask(skillPhraseText) {
     ["rearranging", "practise rearranging five equations symbolically before substituting any numbers"],
     ["extended", "plan two extended responses as linked Physics points before writing the full answer"],
     ["command words", "annotate the command word on five questions and write down exactly what that command requires"],
-    ["calculation", "set out three calculations in the sequence equation, substitution, rearrangement, answer, unit"],
+    ["calculation", "complete three calculation practice questions using this layout consistently"],
     ["definitions", "rewrite five definitions using the exact key words expected by the mark scheme"],
     ["diagrams", "redraw three Physics diagrams with labels, arrows, forces, angles, and units checked against the question"],
   ];
