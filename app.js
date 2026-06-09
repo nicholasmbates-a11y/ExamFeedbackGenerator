@@ -211,6 +211,13 @@ const feedbackOutputEl = document.querySelector("#feedback-output");
 const toggleFeedbackButton = document.querySelector("#toggle-feedback");
 const selectedPupilNoteEl = document.querySelector("#selected-pupil-note");
 const refreshWordingButton = document.querySelector("#refresh-wording");
+const wordingVariantsEl = document.querySelector("#wording-variants");
+const aiKeyStageEl = document.querySelector("#ai-key-stage");
+const aiPromptScopeEl = document.querySelector("#ai-prompt-scope");
+const generateAiPromptButton = document.querySelector("#generate-ai-prompt");
+const copyAiPromptButton = document.querySelector("#copy-ai-prompt");
+const aiFeedbackStatusEl = document.querySelector("#ai-feedback-status");
+const aiPromptOutputEl = document.querySelector("#ai-prompt-output");
 const overallScoreEl = document.querySelector("#overall-score");
 const overallBandEl = document.querySelector("#overall-band");
 const selectedPupilNameEl = document.querySelector("#selected-pupil-name");
@@ -1316,6 +1323,83 @@ function patternSentence(pattern, purpose, seed) {
   const skillText = pattern.skill ? skillPhrase(pattern.skill) : "";
   const diagnosticText = pattern.diagnostic ? diagnosticOptions[pattern.diagnostic]?.toLowerCase() : "";
 
+  if (pattern.kind === "typeSkill") {
+    const specificTemplates = {
+      "practical:graph": {
+        strength: [
+          "Your practical-style answers were strongest when you had to interpret graphs and link the graph features to the Physics.",
+          "You handled practical graph questions well, especially where trends, gradients, and units had to be interpreted.",
+        ],
+        target: [
+          "Practical graph questions are the clearest area to develop: focus on scales, gradients, trends, and what they mean physically.",
+          "To gain more marks, practise practical-style graph questions where you must interpret the data rather than just describe it.",
+        ],
+      },
+      "practical:data": {
+        strength: [
+          "You were secure on practical questions that required data handling and evidence from the question.",
+          "Your practical data work was a strength, particularly where you had to spot patterns and use evidence.",
+        ],
+        target: [
+          "Practical data handling is the main target: practise quoting evidence, spotting patterns, and linking data to conclusions.",
+          "To improve practical-style answers, focus on using the data in the question as evidence for your explanation.",
+        ],
+      },
+      "calculation:rearranging": {
+        strength: [
+          "Your calculation work was strongest when equations had to be rearranged before substituting values.",
+          "You showed secure method in calculation questions involving rearranging equations.",
+        ],
+        target: [
+          "Calculation questions involving rearranging equations need more practice before substituting numbers.",
+          "To pick up more calculation marks, rehearse rearranging equations symbolically before putting values in.",
+        ],
+      },
+      "calculation:calculationLayout": {
+        strength: [
+          "Your calculation layout was clear, with the method easy to follow.",
+          "You were strongest where calculations needed a clear sequence of equation, substitution, answer, and unit.",
+        ],
+        target: [
+          "Calculation layout is the clearest target: show the equation, substitution, rearrangement if needed, final answer, and unit.",
+          "To gain more marks on calculations, make the working easier to follow step by step.",
+        ],
+      },
+      "definition:definition": {
+        strength: [
+          "Definition-style questions were secure because you used the key Physics vocabulary accurately.",
+          "You were strongest on definition questions where precise mark-scheme wording mattered.",
+        ],
+        target: [
+          "Definition-style questions need more precise key terms from the mark scheme.",
+          "To improve definition answers, practise using the exact Physics words that carry the marks.",
+        ],
+      },
+      "extended:command": {
+        strength: [
+          "Your extended responses were strongest where you matched the answer to the command word.",
+          "You handled extended-response questions well when the command word guided the structure of the answer.",
+        ],
+        target: [
+          "Extended-response questions need tighter command-word interpretation before you start writing.",
+          "To improve longer answers, pause on the command word and plan the Physics points before writing.",
+        ],
+      },
+      "graph:data": {
+        strength: [
+          "Graph and data questions were a strength, especially where you had to connect a trend to the Physics.",
+          "You interpreted data from graphs well and used the evidence to support your answers.",
+        ],
+        target: [
+          "Graph and data questions are the main target: practise identifying trends, quoting evidence, and explaining the Physics meaning.",
+          "To improve graph work, focus on using the plotted data as evidence rather than giving a general description.",
+        ],
+      },
+    };
+    const specific = specificTemplates[`${pattern.type}:${pattern.skill}`]?.[purpose];
+    if (specific) return pickVariant(specific, seed);
+  }
+
   if (purpose === "strength") {
     if (pattern.kind === "typeSkill") {
       return pickVariant([
@@ -1354,6 +1438,120 @@ function buildFeedbackPlan(analysis, settings) {
     strengthPattern: findPerformancePattern(strengthQuestions, "strength"),
     targetPattern: findPerformancePattern(targetQuestions, "target"),
   };
+}
+
+function serialisePattern(pattern) {
+  if (!pattern) return null;
+  return {
+    kind: pattern.kind,
+    label: pattern.label,
+    average: pattern.average,
+    count: pattern.count,
+    group: pattern.group || "",
+    type: pattern.type ? questionTypeOptions[pattern.type]?.label || pattern.type : "",
+    skill: pattern.skill ? skillOptions[pattern.skill] || pattern.skill : "",
+    diagnostic: pattern.diagnostic ? diagnosticOptions[pattern.diagnostic] || pattern.diagnostic : "",
+    evidence: pattern.questions.map((question) => ({
+      question: `Q${question.number}`,
+      topic: question.topic,
+      percentage: question.percentage,
+      band: question.band,
+    })),
+  };
+}
+
+function aiReadyFeedbackPlan(pupil) {
+  const analysis = analysePupil(pupil);
+  const settings = getFeedbackSettings();
+  const plan = buildFeedbackPlan(analysis, settings);
+  const keyStage = aiKeyStageEl?.value || "alevel";
+  return {
+    instruction: "Rewrite the WWW and EBI as natural UK Physics feedback. Use only the evidence in this plan. Do not invent topics, marks, grades, or causes.",
+    pupil: pupil.name,
+    keyStage,
+    tone: settings.tone,
+    length: settings.length,
+    overallPercentage: analysis.overallPercentage,
+    calculatedGrade: analysis.calculatedGrade,
+    whatWentWellPattern: serialisePattern(plan.strengthPattern),
+    evenBetterIfPattern: serialisePattern(plan.targetPattern),
+    diagnostics: analysis.marked
+      .flatMap((question) => (question.diagnostics || []).map((diagnostic) => ({
+        question: `Q${question.number}`,
+        topic: question.topic,
+        diagnostic: diagnosticOptions[diagnostic],
+      })))
+      .slice(0, 4),
+    optionalExtraNote: pupil.note || "",
+  };
+}
+
+function aiStageInstruction(stage) {
+  const labels = {
+    ks3: "KS3 pupil: use simpler language, avoid A level terminology unless it appears in the evidence, and keep targets concrete.",
+    gcse: "GCSE pupil: use clear exam-focused language, explain targets in accessible terms, and keep the tone encouraging.",
+    alevel: "A level pupil: use precise sixth-form Physics language and assume familiarity with formal exam skills.",
+  };
+  return labels[stage] || labels.alevel;
+}
+
+function aiFeedbackInstructions(stage) {
+  return [
+    "You are polishing exam feedback for a UK Physics pupil.",
+    aiStageInstruction(stage),
+    "Use only the evidence in the JSON plan. Do not invent topics, marks, grades, causes, question numbers, or diagnoses.",
+    "Write directly to the pupil using 'you'. Never write 'the student'.",
+    "Return valid JSON only with keys: whatWentWell, evenBetterIf, confidence, usedEvidence.",
+    "whatWentWell and evenBetterIf should each be natural prose, not bullet points.",
+    "Keep the judgement and priorities from the plan. You may improve flow and phrasing only.",
+  ].join(" ");
+}
+
+function deterministicFeedbackPackage(pupil) {
+  const feedback = finalFeedbackForPupil(pupil);
+  return {
+    plan: aiReadyFeedbackPlan(pupil),
+    deterministicComment: {
+      whatWentWell: feedback.generated.whatWentWell,
+      evenBetterIf: feedback.generated.evenBetterIf,
+    },
+    nextTasks: nextTasksForPupil(pupil),
+  };
+}
+
+function pupilsForPromptScope() {
+  const scope = aiPromptScopeEl.value;
+  if (scope === "all") return pupils;
+  if (scope === "filtered") return getFilteredPupils();
+  const pupil = pupils.find((item) => item.id === selectedPupilId) || pupils[0];
+  return pupil ? [pupil] : [];
+}
+
+function buildChatGptPrompt() {
+  const stage = aiKeyStageEl.value || "alevel";
+  const promptPupils = pupilsForPromptScope();
+  const payload = {
+    keyStage: stage,
+    stageGuidance: aiStageInstruction(stage),
+    task: "Rewrite the deterministic feedback comments so they sound natural and individualised while preserving the evidence and judgement.",
+    rules: [
+      "Use only the evidence supplied for each pupil.",
+      "Do not invent topics, marks, grades, question numbers, diagnoses, or causes.",
+      "Write directly to each pupil using 'you'. Do not write 'the student'.",
+      "Keep separate labelled sections: What went well and Even better if.",
+      "Preserve the main WWW and EBI patterns chosen by the deterministic planner.",
+      "Avoid repetitive phrasing across pupils where possible.",
+      "Return one result per pupil in the same order.",
+    ],
+    outputFormat: [
+      "Pupil: <name>",
+      "What went well: <polished comment>",
+      "Even better if: <polished comment>",
+    ],
+    pupils: promptPupils.map(deterministicFeedbackPackage),
+  };
+
+  return `You are helping polish UK Physics exam feedback comments.\n\n${JSON.stringify(payload, null, 2)}`;
 }
 
 function nextTasksForPupil(pupil) {
@@ -2106,6 +2304,7 @@ function renderSelectedFeedback() {
   const { analysis } = feedback;
   const warnings = confidenceWarnings(analysis);
   const nextTasks = nextTasksForPupil(pupil);
+  const aiPlan = aiReadyFeedbackPlan(pupil);
   const topicBreakdown = analysis.marked.length > 0
     ? analysis.marked.map((question) => {
       const cohortAverage = topicStats[question.index]?.average;
@@ -2145,6 +2344,12 @@ function renderSelectedFeedback() {
         ${nextTasks.map((task) => `<li>${escapeHtml(ensureSentence(task))}</li>`).join("")}
       </ol>
     </section>
+    <section>
+      <details class="ai-plan-details">
+        <summary>ChatGPT prompt evidence plan</summary>
+        <pre>${escapeHtml(JSON.stringify(aiPlan, null, 2))}</pre>
+      </details>
+    </section>
     ${topicBreakdown ? `
       <section>
         <h3>Topic breakdown</h3>
@@ -2164,6 +2369,30 @@ function renderFeedbackStylePreview() {
 
   const generated = buildFeedbackText(pupil);
   feedbackStylePreviewEl.textContent = `${generated.whatWentWell} ${generated.evenBetterIf}`;
+}
+
+function renderWordingVariants(pupil) {
+  const baseSeed = Number(pupil.feedbackSeed) || 0;
+  const variants = [1, 2, 3].map((offset) => {
+    const seed = baseSeed + offset;
+    const feedback = buildFeedbackText({ ...pupil, feedbackSeed: seed });
+    return { seed, feedback };
+  });
+
+  wordingVariantsEl.hidden = false;
+  wordingVariantsEl.innerHTML = `
+    <h4>Choose a wording variant</h4>
+    ${variants.map(({ seed, feedback }, index) => `
+      <article class="wording-variant-card">
+        <div>
+          <strong>Variant ${index + 1}</strong>
+          <p><span>WWW:</span> ${escapeHtml(feedback.whatWentWell)}</p>
+          <p><span>EBI:</span> ${escapeHtml(feedback.evenBetterIf)}</p>
+        </div>
+        <button type="button" class="secondary-action small-action" data-apply-wording-variant="${seed}">Use</button>
+      </article>
+    `).join("")}
+  `;
 }
 
 function renderDiagnostics() {
@@ -2691,13 +2920,41 @@ selectedPupilNoteEl.addEventListener("input", () => {
 refreshWordingButton.addEventListener("click", () => {
   const pupil = pupils.find((item) => item.id === selectedPupilId);
   if (!pupil) return;
+  renderWordingVariants(pupil);
+});
+
+wordingVariantsEl.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-apply-wording-variant]");
+  if (!button) return;
+  const pupil = pupils.find((item) => item.id === selectedPupilId);
+  const seed = Number(button.dataset.applyWordingVariant);
+  if (!pupil || !Number.isFinite(seed)) return;
   pushUndo();
-  pupil.feedbackSeed = (Number(pupil.feedbackSeed) || 0) + 1;
+  pupil.feedbackSeed = seed;
   pupil.feedbackOverride = { whatWentWell: "", evenBetterIf: "" };
+  wordingVariantsEl.hidden = true;
+  wordingVariantsEl.innerHTML = "";
   renderSelectedFeedback();
   renderFeedbackReview();
   setSaveStatus(`Refreshed wording for ${pupil.name}.`);
   scheduleAutosave();
+});
+
+generateAiPromptButton.addEventListener("click", () => {
+  const promptPupils = pupilsForPromptScope();
+  if (promptPupils.length === 0) {
+    aiFeedbackStatusEl.textContent = "No pupils match this prompt scope.";
+    return;
+  }
+  aiPromptOutputEl.value = buildChatGptPrompt();
+  aiPromptOutputEl.hidden = false;
+  copyAiPromptButton.hidden = false;
+  aiFeedbackStatusEl.textContent = `Prompt generated for ${promptPupils.length} pupil${promptPupils.length === 1 ? "" : "s"}.`;
+});
+
+copyAiPromptButton.addEventListener("click", () => {
+  copyText(aiPromptOutputEl.value || "", copyAiPromptButton);
+  aiFeedbackStatusEl.textContent = "Prompt copied. Paste it into ChatGPT and review the returned comments.";
 });
 
 feedbackReviewListEl.addEventListener("input", (event) => {
@@ -3244,27 +3501,64 @@ function parseSheetMatrix(files, sheetPath = null) {
   return { rows, formulaCells };
 }
 
-function isRawMarkColumn(header, maxMark, formulaCells, col) {
-  const text = String(header || "").toLowerCase();
-  if (!header || !Number.isFinite(Number(maxMark))) return false;
-  if (formulaCells.has(`2:${col}`)) return false;
-  if (/%|weighting|total|grade|written|practical\s*\/|prac weighting/.test(text)) return false;
-  return true;
+function normaliseExcelHeader(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function classifyExcelColumns(rows, formulaCells) {
-  const headers = rows[0] || [];
-  const maxes = rows[1] || [];
+function findExcelColumn(headers, patterns) {
+  return headers.findIndex((header) => patterns.some((pattern) => pattern.test(normaliseExcelHeader(header))));
+}
+
+function detectExcelLayout(rows) {
+  const questionHeaderRow = 0;
+  const maxRow = 1;
+  const candidateRows = rows.slice(0, 8);
+  let metadataHeaderRow = candidateRows.findIndex((row) => {
+    const labels = (row || []).map(normaliseExcelHeader);
+    return labels.some((label) => /^(surname|last name|family name)$/.test(label))
+      || labels.some((label) => /^(first name|forename|given name)$/.test(label))
+      || labels.some((label) => /^(pupil|pupil name|student|student name|full name|name)$/.test(label));
+  });
+  if (metadataHeaderRow === -1) metadataHeaderRow = questionHeaderRow;
+
+  const metadataHeaders = rows[metadataHeaderRow] || [];
+  const questionHeaders = rows[questionHeaderRow] || [];
+  const surname = findExcelColumn(metadataHeaders, [/^surname$/, /^last name$/, /^family name$/]);
+  const firstName = findExcelColumn(metadataHeaders, [/^first name$/, /^forename$/, /^given name$/]);
+  let name = findExcelColumn(metadataHeaders, [/^pupil$/, /^pupil name$/, /^student$/, /^student name$/, /^full name$/, /^name$/]);
+  if (surname !== -1 || firstName !== -1) name = -1;
+
+  const classGroup = findExcelColumn(metadataHeaders, [/^class$/, /^class\/group$/, /^group$/, /^form$/]);
+  const teacher = findExcelColumn(metadataHeaders, [/^teacher$/, /^teacher name$/, /^staff$/]);
+  const grade = findExcelColumn(metadataHeaders, [/^grade$/, /^predicted grade$/, /^working grade$/]);
+  const metadataColumns = new Set([name, surname, firstName, classGroup, teacher, grade].filter((col) => col >= 0));
+  const dataStartRow = metadataHeaderRow > maxRow ? metadataHeaderRow + 1 : maxRow + 1;
+
+  return {
+    questionHeaderRow,
+    maxRow,
+    metadataHeaderRow,
+    dataStartRow,
+    metadataHeaders,
+    questionHeaders,
+    metadata: { name, surname, firstName, classGroup, teacher, grade },
+    metadataColumns,
+  };
+}
+
+function classifyExcelColumns(rows, formulaCells, layout) {
+  const headers = rows[layout.questionHeaderRow] || [];
+  const maxes = rows[layout.maxRow] || [];
   return headers.map((header, col) => {
     const text = String(header || "").toLowerCase();
     const max = Number(maxes[col]);
-    if (col === 0) return { header, col, decision: "metadata", reason: "Pupil name column" };
-    if (col === 1) return { header, col, decision: "metadata", reason: "Class/group column" };
-    if (col === 2) return { header, col, decision: "metadata", reason: "Teacher column" };
-    if (text === "grade") return { header, col, decision: "metadata", reason: "Grade column" };
+    const metadataHeader = layout.metadataHeaders[col];
+    if (layout.metadataColumns.has(col)) {
+      return { header: metadataHeader || header, col, decision: "metadata", reason: "Pupil metadata column" };
+    }
     if (!header) return { header, col, decision: "skip", reason: "Blank header" };
     if (!Number.isFinite(max)) return { header, col, decision: "skip", reason: "No numeric max mark in row 2" };
-    if (formulaCells.has(`2:${col}`)) return { header, col, decision: "skip", reason: "Row 2 max mark is calculated" };
+    if (formulaCells.has(`${layout.maxRow}:${col}`)) return { header, col, decision: "skip", reason: "Maximum mark is calculated" };
     if (/%|weighting|total|grade|written|practical\s*\/|prac weighting/.test(text)) return { header, col, decision: "skip", reason: "Calculated summary/percentage/weighting column" };
     return { header, col, max, decision: "import", reason: `Raw mark column, max ${max}` };
   });
@@ -3274,31 +3568,28 @@ function excelColumnLabel(header, col) {
   return `${col + 1}: ${header || "(blank)"}`;
 }
 
-function excelColumnOptions(rows, selected, allowNone = true) {
-  const headers = rows[0] || [];
+function excelColumnOptions(rows, selected, allowNone = true, headerRow = 0) {
+  const headers = rows[headerRow] || [];
   const options = headers
     .map((header, col) => `<option value="${col}"${Number(selected) === col ? " selected" : ""}>${escapeHtml(excelColumnLabel(header, col))}</option>`)
     .join("");
   return `${allowNone ? `<option value="-1"${Number(selected) === -1 ? " selected" : ""}>Not imported</option>` : ""}${options}`;
 }
 
-function getExcelSheetState(sheetIndex, rows, decisions) {
+function getExcelSheetState(sheetIndex, rows, decisions, layout) {
   if (!pendingExcelWorkbook.sheetStates[sheetIndex]) {
-    const gradeColumn = decisions.find((item) => String(item.header || "").toLowerCase() === "grade");
     pendingExcelWorkbook.sheetStates[sheetIndex] = {
       step: 0,
-      metadata: {
-        name: 0,
-        classGroup: 1,
-        teacher: 2,
-        grade: gradeColumn?.col ?? -1,
-      },
+      layout,
+      metadata: { ...layout.metadata },
       questionSelections: Object.fromEntries(decisions
         .filter((item) => item.decision === "import")
         .map((item) => [item.col, true])),
     };
   }
-  return pendingExcelWorkbook.sheetStates[sheetIndex];
+  const state = pendingExcelWorkbook.sheetStates[sheetIndex];
+  state.layout = layout;
+  return state;
 }
 
 function enrichExcelDecisions(decisions, sheetState) {
@@ -3331,9 +3622,10 @@ function renderExcelWizardStage(sheetInfo, rows, decisions, sheetState) {
   applyExcelImportButton.disabled = importColumns.length === 0;
 
   if (step === 0) {
+    const layout = sheetState.layout;
     excelWizardStageEl.innerHTML = `
       <div class="wizard-note">
-        Using sheet <strong>${escapeHtml(sheetInfo.name)}</strong>. The wizard expects pupil data to start on row 3, with headers on row 1 and maximum marks on row 2.
+        Using sheet <strong>${escapeHtml(sheetInfo.name)}</strong>. Question headings were found on row ${layout.questionHeaderRow + 1}, maximum marks on row ${layout.maxRow + 1}, and pupil data starts on row ${layout.dataStartRow + 1}.
       </div>
     `;
     return;
@@ -3341,24 +3633,33 @@ function renderExcelWizardStage(sheetInfo, rows, decisions, sheetState) {
 
   if (step === 1) {
     const metadata = sheetState.metadata;
+    const headerRow = sheetState.layout.metadataHeaderRow;
     excelWizardStageEl.innerHTML = `
-      <div class="wizard-note">Confirm where pupil details are stored. Only the pupil name column is required.</div>
+      <div class="wizard-note">Confirm where pupil details are stored. Use either one full-name column, or separate first-name and surname columns. Class, teacher, and grade are optional.</div>
       <div class="wizard-grid">
         <label>
-          Pupil name
-          <select data-excel-meta="name">${excelColumnOptions(rows, metadata.name, false)}</select>
+          Full name
+          <select data-excel-meta="name">${excelColumnOptions(rows, metadata.name, true, headerRow)}</select>
+        </label>
+        <label>
+          First name
+          <select data-excel-meta="firstName">${excelColumnOptions(rows, metadata.firstName, true, headerRow)}</select>
+        </label>
+        <label>
+          Surname
+          <select data-excel-meta="surname">${excelColumnOptions(rows, metadata.surname, true, headerRow)}</select>
         </label>
         <label>
           Class/group
-          <select data-excel-meta="classGroup">${excelColumnOptions(rows, metadata.classGroup)}</select>
+          <select data-excel-meta="classGroup">${excelColumnOptions(rows, metadata.classGroup, true, headerRow)}</select>
         </label>
         <label>
           Teacher
-          <select data-excel-meta="teacher">${excelColumnOptions(rows, metadata.teacher)}</select>
+          <select data-excel-meta="teacher">${excelColumnOptions(rows, metadata.teacher, true, headerRow)}</select>
         </label>
         <label>
           Grade
-          <select data-excel-meta="grade">${excelColumnOptions(rows, metadata.grade)}</select>
+          <select data-excel-meta="grade">${excelColumnOptions(rows, metadata.grade, true, headerRow)}</select>
         </label>
       </div>
     `;
@@ -3372,18 +3673,31 @@ function renderExcelWizardStage(sheetInfo, rows, decisions, sheetState) {
   `;
 }
 
+function excelPupilName(row, metadata, fallback = "") {
+  const fullName = metadata.name === -1 ? "" : String(row?.[metadata.name] || "").trim();
+  if (fullName) return fullName;
+  const firstName = metadata.firstName === -1 ? "" : String(row?.[metadata.firstName] || "").trim();
+  const surname = metadata.surname === -1 ? "" : String(row?.[metadata.surname] || "").trim();
+  return [firstName, surname].filter(Boolean).join(" ").trim() || fallback;
+}
+
+function excelRowHasPupil(row, metadata) {
+  return Boolean(excelPupilName(row, metadata));
+}
+
 function renderExcelPreview(sheetIndex = 0) {
   if (!pendingExcelWorkbook) return;
   const sheetInfo = pendingExcelWorkbook.sheets[sheetIndex];
   const { rows, formulaCells } = parseSheetMatrix(pendingExcelWorkbook.files, sheetInfo.path);
-  const rawDecisions = classifyExcelColumns(rows, formulaCells);
-  const sheetState = getExcelSheetState(sheetIndex, rows, rawDecisions);
+  const layout = detectExcelLayout(rows);
+  const rawDecisions = classifyExcelColumns(rows, formulaCells, layout);
+  const sheetState = getExcelSheetState(sheetIndex, rows, rawDecisions, layout);
   const decisions = enrichExcelDecisions(rawDecisions, sheetState);
   const imported = decisions.filter((item) => item.enabled);
   const available = decisions.filter((item) => item.importable);
   const skipped = decisions.filter((item) => item.decision === "skip");
   const metadata = decisions.filter((item) => item.decision === "metadata");
-  const pupilsFound = rows.slice(2).filter((row) => row?.[sheetState.metadata.name]).length;
+  const pupilsFound = rows.slice(sheetState.layout.dataStartRow).filter((row) => excelRowHasPupil(row, sheetState.metadata)).length;
 
   pendingExcelWorkbook.current = { rows, decisions, sheetIndex, sheetState };
   excelPreviewSummaryEl.innerHTML = `
@@ -3434,24 +3748,30 @@ function applyExcelImport() {
   }
 
   const metadata = sheetState.metadata;
+  const hasNameMapping = metadata.name !== -1 || metadata.firstName !== -1 || metadata.surname !== -1;
+  if (!hasNameMapping) {
+    setSaveStatus("Choose a full-name column or separate first-name/surname columns.");
+    return;
+  }
   pushUndo();
   lastImportIssues = [];
   questions = markColumns.map((item, index) => createQuestion(index + 1, String(item.header).trim(), item.max));
-  pupils = rows.slice(2)
-    .filter((row) => row?.[metadata.name])
+  pupils = rows.slice(sheetState.layout.dataStartRow)
+    .filter((row) => excelRowHasPupil(row, metadata))
     .map((row, rowIndex) => ({
       id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${rowIndex}`,
-      name: String(row[metadata.name]).trim() || `Pupil ${rowIndex + 1}`,
+      name: excelPupilName(row, metadata, `Pupil ${rowIndex + 1}`),
       classGroup: metadata.classGroup === -1 ? "" : String(row[metadata.classGroup] || ""),
       teacher: metadata.teacher === -1 ? "" : String(row[metadata.teacher] || ""),
       grade: metadata.grade === -1 ? "" : String(row[metadata.grade] || ""),
       note: "",
       feedbackSeed: 0,
-      scores: markColumns.map((item) => clampImportedMark(row[item.col] ?? "", item.max, `${row[metadata.name] || `Pupil ${rowIndex + 1}`} ${item.header}`)),
+      scores: markColumns.map((item) => clampImportedMark(row[item.col] ?? "", item.max, `${excelPupilName(row, metadata, `Pupil ${rowIndex + 1}`)} ${item.header}`)),
       diagnostics: markColumns.map(() => []),
       feedbackOverride: { whatWentWell: "", evenBetterIf: "" },
     }));
   selectedPupilId = pupils[0]?.id;
+  if (metadata.teacher === -1) reportIncludeTeacherEl.checked = false;
   pendingExcelWorkbook = null;
   excelPreviewPanelEl.classList.add("hidden");
   rerenderAll();

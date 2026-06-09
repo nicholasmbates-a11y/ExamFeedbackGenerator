@@ -1209,6 +1209,89 @@ td:first-child,
   padding-left: 20px;
 }
 
+.wording-variants {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.wording-variants[hidden] {
+  display: none;
+}
+
+.wording-variants h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.wording-variant-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--panel);
+}
+
+.wording-variant-card p {
+  margin: 6px 0 0;
+  color: #26313d;
+  line-height: 1.4;
+}
+
+.wording-variant-card span {
+  font-weight: 900;
+}
+
+.ai-plan-details summary {
+  cursor: pointer;
+  color: var(--accent-dark);
+  font-weight: 900;
+}
+
+.ai-plan-details pre {
+  overflow: auto;
+  max-height: 240px;
+  margin: 10px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fbfc;
+  color: #26313d;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+}
+
+.ai-feedback-panel {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.ai-feedback-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ai-feedback-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.ai-prompt-output {
+  width: 100%;
+  min-height: 260px;
+  margin-top: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  resize: vertical;
+}
+
 .topic-breakdown li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -1415,6 +1498,10 @@ td:first-child,
 
   .analysis-block-header .small-action {
     width: 100%;
+  }
+
+  .ai-feedback-grid {
+    grid-template-columns: 1fr;
   }
 
   .review-grid {
