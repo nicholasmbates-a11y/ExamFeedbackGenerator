@@ -239,6 +239,8 @@ const templateNameInput = document.querySelector("#template-name");
 const templateSlotsSelect = document.querySelector("#template-slots");
 const saveTemplateButton = document.querySelector("#save-template");
 const loadTemplateButton = document.querySelector("#load-template");
+const exportStructureButton = document.querySelector("#export-structure");
+const exportTemplateButton = document.querySelector("#export-template");
 const pasteMarksButton = document.querySelector("#paste-marks");
 const saveStatusEl = document.querySelector("#save-status");
 const autosaveRecoveryEl = document.querySelector("#autosave-recovery");
@@ -1294,6 +1296,8 @@ function findPerformancePattern(questionsToSummarise, purpose) {
 
 function supportingPatternDetail(pattern, purpose) {
   if (!pattern) return "";
+  const patternNamesSkill = ["typeSkill", "groupSkill", "skill"].includes(pattern.kind);
+  const patternNamesDiagnostic = pattern.kind === "diagnostic";
   const skills = skillPerformanceSummary(pattern.questions).slice(0, 2);
   const diagnostics = pattern.questions
     .flatMap((question) => question.diagnostics || [])
@@ -1302,13 +1306,13 @@ function supportingPatternDetail(pattern, purpose) {
     .map((value) => diagnosticOptions[value]?.toLowerCase())
     .filter(Boolean);
 
-  if (purpose === "strength" && skills.length > 0) {
+  if (purpose === "strength" && skills.length > 0 && !patternNamesSkill) {
     return `This suggests confidence with ${formatTopicList(skills)}.`;
   }
-  if (purpose === "target" && diagnostics.length > 0) {
+  if (purpose === "target" && diagnostics.length > 0 && !patternNamesDiagnostic) {
     return `The repeated issue was ${formatTopicList(diagnostics)}.`;
   }
-  if (purpose === "target" && skills.length > 0) {
+  if (purpose === "target" && skills.length > 0 && !patternNamesSkill) {
     return `The skill to practise is ${formatTopicList(skills)}.`;
   }
   return "";
@@ -1673,14 +1677,9 @@ function buildFeedbackText(pupil) {
     .slice(0, 1)
     .map((question) => `For Q${question.number}, remember: ${question.note}.`)
     .join(" ");
-  const diagnosticTasks = plan.targetQuestions
+  const firstDiagnostic = plan.targetQuestions
     .flatMap((question) => question.diagnostics || [])
-    .filter((value, index, values) => values.indexOf(value) === index)
-    .slice(0, 1)
-    .map(diagnosticRevisionTask);
-  const diagnosticTaskText = diagnosticTasks.length > 0
-    ? `A precise exam-skill task is to ${diagnosticTasks[0]}.`
-    : "";
+    .find((value, index, values) => values.indexOf(value) === index);
   const diagnosticDetails = analysis.marked
     .filter((question) => question.diagnostics?.length > 0)
     .slice(0, 1)
@@ -1691,14 +1690,16 @@ function buildFeedbackText(pupil) {
     : plan.targetPattern?.diagnostic
       ? diagnosticRevisionTask(plan.targetPattern.diagnostic)
       : "";
-  const revisionTaskText = settings.includeRevisionTask && patternTask
-    ? `A useful revision task would be to ${patternTask}.`
+  const chosenRevisionTask = patternTask || (firstDiagnostic ? diagnosticRevisionTask(firstDiagnostic) : "");
+  const revisionTaskText = settings.includeRevisionTask && chosenRevisionTask
+    ? `A useful revision task would be to ${chosenRevisionTask}.`
     : "";
   const gradeNudge = settings.avoidGrades ? "" : gradeFeedbackNudge(analysis);
   const cohortComparison = settings.includeCohortComparison && analysis.overallPercentage !== null
     ? cohortComparisonSentence(pupil, analysis)
     : "";
-  const examSkills = plan.targetPattern?.diagnostic ? "" : examSkillTarget(analysis);
+  const patternAlreadyTargetsExamSkill = Boolean(plan.targetPattern?.skill || plan.targetPattern?.diagnostic);
+  const examSkills = patternAlreadyTargetsExamSkill ? "" : examSkillTarget(analysis);
   const extraNote = ensureSentence(pupil.note || "");
 
   const wwwSentences = plan.strengthQuestions.length > 0
@@ -1717,7 +1718,6 @@ function buildFeedbackText(pupil) {
       revisionTaskText,
       targetCommentDetails,
       targetNotes,
-      settings.includeRevisionTask ? diagnosticTaskText : "",
       examSkills,
       gradeNudge,
       cohortComparison,
@@ -1725,7 +1725,7 @@ function buildFeedbackText(pupil) {
     : [
       `${toneSetting.targetLead}, ${toneSetting.precision}`,
       diagnosticDetails,
-      settings.includeRevisionTask ? diagnosticTaskText : "",
+      revisionTaskText,
       examSkills,
       gradeNudge,
       cohortComparison,
@@ -3207,6 +3207,86 @@ function csvEscape(value) {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
+function safeDownloadName(value, fallback) {
+  return String(value || fallback)
+    .trim()
+    .replace(/[^a-z0-9-_]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase() || fallback;
+}
+
+function downloadTextFile(content, filename, type) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportExamStructureCsv() {
+  const headers = [
+    "Question",
+    "Topic",
+    "Unit/group",
+    "Question type",
+    "Max",
+    "Skills",
+    "Mark note",
+    "Good comment",
+    "Average comment",
+    "Support comment",
+  ];
+  const rows = questions.map((question) => [
+    question.number,
+    question.topic,
+    question.group || "",
+    question.type || "mixed",
+    question.max,
+    (question.skills || []).map((skill) => skillOptions[skill] || skill).join("; "),
+    question.note || "",
+    question.comments.good,
+    question.comments.average,
+    question.comments.bad,
+  ]);
+  const csv = [headers, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
+  const baseName = safeDownloadName(templateNameInput.value || saveNameInput.value, "physics-exam-structure");
+  downloadTextFile(csv, `${baseName}-structure.csv`, "text/csv;charset=utf-8");
+}
+
+function exportTemplateJson() {
+  const template = {
+    format: "physics-feedback-template",
+    version: 1,
+    name: templateNameInput.value.trim() || "Physics template",
+    ...getTemplateState(),
+  };
+  const baseName = safeDownloadName(template.name, "physics-feedback-template");
+  downloadTextFile(JSON.stringify(template, null, 2), `${baseName}.json`, "application/json;charset=utf-8");
+}
+
+function importTemplateJson(text) {
+  let template;
+  try {
+    template = JSON.parse(text);
+  } catch {
+    throw new Error("The template JSON could not be read.");
+  }
+  if (template.format && template.format !== "physics-feedback-template") {
+    throw new Error("This JSON file is not a Physics feedback template.");
+  }
+  if (!Array.isArray(template.questions) || template.questions.length === 0) {
+    throw new Error("The template does not contain any exam questions.");
+  }
+
+  pushUndo();
+  applyTemplateState(template);
+  if (template.name) templateNameInput.value = String(template.name);
+  setSaveStatus(`Imported template "${template.name || "Physics template"}".`);
+}
+
 function openPrintableDocument(title, bodyHtml) {
   const win = window.open("", "_blank");
   if (!win) {
@@ -3991,7 +4071,7 @@ function importExamStructure(text) {
   const headers = rows[0].map((header) => header.trim().toLowerCase());
   const questionIndex = headers.findIndex((header) => ["question", "q", "number"].includes(header));
   const topicIndex = headers.findIndex((header) => ["topic", "content"].includes(header));
-  const groupIndex = headers.findIndex((header) => ["group", "unit", "topic group", "unit group"].includes(header));
+  const groupIndex = headers.findIndex((header) => ["group", "unit", "topic group", "unit group", "unit/group"].includes(header));
   const typeIndex = headers.findIndex((header) => ["type", "question type"].includes(header));
   const maxIndex = headers.findIndex((header) => ["max", "marks", "maximum", "max marks"].includes(header));
   const goodIndex = headers.findIndex((header) => ["good comment", "good"].includes(header));
@@ -4176,6 +4256,16 @@ templateSlotsSelect.addEventListener("change", () => {
   if (templateSlotsSelect.value) templateNameInput.value = templateSlotsSelect.value;
 });
 
+exportStructureButton.addEventListener("click", () => {
+  exportExamStructureCsv();
+  setSaveStatus("Exam structure CSV exported.");
+});
+
+exportTemplateButton.addEventListener("click", () => {
+  exportTemplateJson();
+  setSaveStatus("Complete template JSON exported.");
+});
+
 exportCsvButton.addEventListener("click", () => {
   prepareExport("CSV export");
   exportCsv();
@@ -4267,7 +4357,16 @@ applyExcelImportButton.addEventListener("click", applyExcelImport);
 structureFileInput.addEventListener("change", async () => {
   const file = structureFileInput.files?.[0];
   if (!file) return;
-  importExamStructure(await file.text());
+  const text = await file.text();
+  try {
+    if (file.name.toLowerCase().endsWith(".json") || file.type === "application/json") {
+      importTemplateJson(text);
+    } else {
+      importExamStructure(text);
+    }
+  } catch (error) {
+    setSaveStatus(error.message);
+  }
   structureFileInput.value = "";
 });
 

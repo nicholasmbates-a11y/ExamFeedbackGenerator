@@ -22,7 +22,7 @@
             <button id="undo-change" type="button" class="secondary-action">Undo</button>
             <button id="paste-marks" type="button" class="secondary-action">Paste marks</button>
             <button id="import-csv" type="button" class="secondary-action">Import marks</button>
-            <button id="import-structure" type="button" class="secondary-action">Import structure</button>
+            <button id="import-structure" type="button" class="secondary-action">Import structure/template</button>
             <button id="export-csv" type="button" class="secondary-action">Export CSV</button>
             <button id="print-reports" type="button" class="secondary-action">Report pack</button>
             <button id="export-summary" type="button" class="secondary-action">Summary</button>
@@ -30,7 +30,7 @@
             <button id="copy-feedback" type="button" class="primary-action">Copy selected</button>
           </div>
           <input id="csv-file" type="file" accept=".csv,.tsv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
-          <input id="structure-file" type="file" accept=".csv,text/csv" hidden>
+          <input id="structure-file" type="file" accept=".csv,.json,text/csv,application/json" hidden>
         </header>
 
         <section id="autosave-recovery" class="autosave-recovery hidden" aria-live="polite">
@@ -134,13 +134,15 @@
         <section class="panel controls-panel" aria-labelledby="templates-title">
           <div>
             <h2 id="templates-title">Templates</h2>
-            <p>Save or load exam structures and comment banks without pupil data.</p>
+            <p>Save locally, or share exam structures and complete templates without pupil data.</p>
           </div>
           <div class="template-controls">
             <input id="template-name" type="text" value="Physics template" aria-label="Template name">
             <select id="template-slots" aria-label="Saved templates"></select>
             <button id="save-template" type="button" class="secondary-action">Save template</button>
             <button id="load-template" type="button" class="secondary-action">Load template</button>
+            <button id="export-structure" type="button" class="secondary-action">Export structure CSV</button>
+            <button id="export-template" type="button" class="secondary-action">Export template JSON</button>
           </div>
         </section>
 
