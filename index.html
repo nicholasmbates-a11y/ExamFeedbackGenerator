@@ -553,7 +553,7 @@
           <div class="section-heading compact-heading">
             <div>
               <h3 id="ai-feedback-title">ChatGPT prompt generator</h3>
-              <p>Creates a prompt from the deterministic feedback plans. No API key or paid API call is used.</p>
+              <p>Creates a prompt from the deterministic feedback plans. Pupil names are reduced to first name and surname initial.</p>
             </div>
           </div>
           <div class="ai-feedback-grid">
@@ -573,10 +573,20 @@
                 <option value="all">Whole cohort</option>
               </select>
             </label>
+            <label>
+              ChatGPT output
+              <select id="ai-output-format">
+                <option value="firefly">Firefly-ready pupil blocks</option>
+                <option value="text">Plain-text pupil blocks</option>
+              </select>
+            </label>
           </div>
           <div class="action-row">
             <button id="generate-ai-prompt" type="button" class="primary-action">Generate prompt</button>
+            <button id="generate-cohort-ai-prompt" type="button" class="secondary-action">Whole-cohort prompt</button>
+            <button id="export-deterministic-comments" type="button" class="secondary-action">Export deterministic CSV</button>
             <button id="copy-ai-prompt" type="button" class="secondary-action" hidden>Copy prompt</button>
+            <button id="download-ai-prompt" type="button" class="secondary-action" hidden>Download prompt</button>
           </div>
           <p id="ai-feedback-status" class="save-status">Paste the generated prompt into ChatGPT, then review the returned comments before using them.</p>
           <textarea id="ai-prompt-output" class="ai-prompt-output" readonly hidden></textarea>

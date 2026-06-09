@@ -214,8 +214,12 @@ const refreshWordingButton = document.querySelector("#refresh-wording");
 const wordingVariantsEl = document.querySelector("#wording-variants");
 const aiKeyStageEl = document.querySelector("#ai-key-stage");
 const aiPromptScopeEl = document.querySelector("#ai-prompt-scope");
+const aiOutputFormatEl = document.querySelector("#ai-output-format");
 const generateAiPromptButton = document.querySelector("#generate-ai-prompt");
+const generateCohortAiPromptButton = document.querySelector("#generate-cohort-ai-prompt");
+const exportDeterministicCommentsButton = document.querySelector("#export-deterministic-comments");
 const copyAiPromptButton = document.querySelector("#copy-ai-prompt");
+const downloadAiPromptButton = document.querySelector("#download-ai-prompt");
 const aiFeedbackStatusEl = document.querySelector("#ai-feedback-status");
 const aiPromptOutputEl = document.querySelector("#ai-prompt-output");
 const overallScoreEl = document.querySelector("#overall-score");
@@ -1464,17 +1468,34 @@ function serialisePattern(pattern) {
   };
 }
 
-function aiReadyFeedbackPlan(pupil) {
+function promptSafePupilName(name) {
+  const normalised = String(name || "").trim().replace(/\s+/g, " ");
+  if (!normalised) return "Pupil";
+
+  if (normalised.includes(",")) {
+    const [surnamePart, givenPart] = normalised.split(",", 2).map((part) => part.trim());
+    const firstName = givenPart.split(" ")[0] || "Pupil";
+    const surnameInitial = surnamePart.charAt(0).toUpperCase();
+    return surnameInitial ? `${firstName} ${surnameInitial}` : firstName;
+  }
+
+  const parts = normalised.split(" ");
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1].charAt(0).toUpperCase()}`;
+}
+
+function aiReadyFeedbackPlan(pupil, pupilName = pupil.name) {
   const analysis = analysePupil(pupil);
   const settings = getFeedbackSettings();
   const plan = buildFeedbackPlan(analysis, settings);
   const keyStage = aiKeyStageEl?.value || "alevel";
   return {
     instruction: "Rewrite the WWW and EBI as natural UK Physics feedback. Use only the evidence in this plan. Do not invent topics, marks, grades, or causes.",
-    pupil: pupil.name,
+    pupil: pupilName,
     keyStage,
     tone: settings.tone,
     length: settings.length,
+    rawMark: rawMarkText(analysis, ""),
     overallPercentage: analysis.overallPercentage,
     calculatedGrade: analysis.calculatedGrade,
     whatWentWellPattern: serialisePattern(plan.strengthPattern),
@@ -1513,8 +1534,15 @@ function aiFeedbackInstructions(stage) {
 
 function deterministicFeedbackPackage(pupil) {
   const feedback = finalFeedbackForPupil(pupil);
+  const analysis = feedback.analysis || analysePupil(pupil);
+  const promptName = promptSafePupilName(pupil.name);
   return {
-    plan: aiReadyFeedbackPlan(pupil),
+    pupil: promptName,
+    classGroup: pupil.classGroup || "",
+    rawMark: rawMarkText(analysis, ""),
+    percentageMark: analysis.overallPercentage,
+    grade: pupil.grade || analysis.calculatedGrade || "",
+    plan: aiReadyFeedbackPlan(pupil, promptName),
     deterministicComment: {
       whatWentWell: feedback.generated.whatWentWell,
       evenBetterIf: feedback.generated.evenBetterIf,
@@ -1533,29 +1561,95 @@ function pupilsForPromptScope() {
 
 function buildChatGptPrompt() {
   const stage = aiKeyStageEl.value || "alevel";
+  const outputFormat = aiOutputFormatEl.value || "firefly";
   const promptPupils = pupilsForPromptScope();
+  const outputInstructions = outputFormat === "firefly"
+    ? {
+      format: "Return the feedback in a Firefly-ready copy/paste format. Use one pupil per block. The heading must contain the pupil name followed by their raw mark and percentage mark, then What went well and Even better if underneath. Do not use a table or CSV.",
+      template: [
+        "<Pupil name> - <raw mark, e.g. 45/80> - <percentage mark>%",
+        "What went well",
+        "<polished comment>",
+        "Even better if",
+        "<polished comment>",
+      ],
+      rules: [
+        "Include every pupil in the supplied order.",
+        "State the supplied raw mark and percentage mark explicitly beside every pupil's name.",
+        "Put one blank line between pupil blocks.",
+        "Do not add bullets, numbering, tables, CSV formatting, an introduction, or a conclusion.",
+        "Keep each pupil's two comments ready to copy directly into Firefly.",
+      ],
+    }
+    : {
+      format: "Return one continuous plain-text document containing the complete cohort, with no introductory or closing commentary.",
+      template: [
+        "<Pupil name> - <raw mark, e.g. 45/80> - <percentage mark>%",
+        "What went well",
+        "<polished comment>",
+        "Even better if",
+        "<polished comment>",
+      ],
+      rules: [
+        "Include every pupil in the supplied order.",
+        "State the supplied raw mark and percentage mark explicitly beside every pupil's name.",
+        "Separate pupils with one blank line.",
+        "Do not use a table or CSV.",
+      ],
+    };
   const payload = {
     keyStage: stage,
     stageGuidance: aiStageInstruction(stage),
-    task: "Rewrite the deterministic feedback comments so they sound natural and individualised while preserving the evidence and judgement.",
+    task: "Rewrite all supplied deterministic feedback comments so they sound natural and individualised, then return the complete set as one file-ready response.",
     rules: [
       "Use only the evidence supplied for each pupil.",
+      "Use only the privacy-reduced pupil name supplied in each record. Do not attempt to infer or expand the surname.",
       "Do not invent topics, marks, grades, question numbers, diagnoses, or causes.",
       "Write directly to each pupil using 'you'. Do not write 'the student'.",
       "Keep separate labelled sections: What went well and Even better if.",
       "Preserve the main WWW and EBI patterns chosen by the deterministic planner.",
+      "Use the supplied percentage mark to calibrate the overall tone and reproduce both the raw mark and percentage exactly beside the pupil's name in the heading.",
       "Avoid repetitive phrasing across pupils where possible.",
       "Return one result per pupil in the same order.",
     ],
-    outputFormat: [
-      "Pupil: <name>",
-      "What went well: <polished comment>",
-      "Even better if: <polished comment>",
-    ],
+    outputInstructions,
     pupils: promptPupils.map(deterministicFeedbackPackage),
   };
 
   return `You are helping polish UK Physics exam feedback comments.\n\n${JSON.stringify(payload, null, 2)}`;
+}
+
+function deterministicCommentsCsv(pupilsToExport = pupils) {
+  const headers = ["Pupil", "Class/group", "Teacher", "Raw mark", "Percentage", "Grade", "What went well", "Even better if"];
+  const rows = pupilsToExport.map((pupil) => {
+    const feedback = finalFeedbackForPupil(pupil);
+    const analysis = analysePupil(pupil);
+    return [
+      pupil.name,
+      pupil.classGroup || "",
+      pupil.teacher || "",
+      rawMarkText(analysis, ""),
+      analysis.overallPercentage === null ? "" : `${analysis.overallPercentage}%`,
+      pupil.grade || analysis.calculatedGrade || "",
+      feedback.generated.whatWentWell,
+      feedback.generated.evenBetterIf,
+    ];
+  });
+  return [headers, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
+function showGeneratedAiPrompt() {
+  const promptPupils = pupilsForPromptScope();
+  if (promptPupils.length === 0) {
+    aiFeedbackStatusEl.textContent = "No pupils match this prompt scope.";
+    return;
+  }
+  aiPromptOutputEl.value = buildChatGptPrompt();
+  aiPromptOutputEl.hidden = false;
+  copyAiPromptButton.hidden = false;
+  downloadAiPromptButton.hidden = false;
+  const fileLabel = aiOutputFormatEl.value === "firefly" ? "Firefly-ready pupil blocks" : "plain-text pupil blocks";
+  aiFeedbackStatusEl.textContent = `Prompt generated for ${promptPupils.length} pupil${promptPupils.length === 1 ? "" : "s"}; ChatGPT will be asked to return ${fileLabel}.`;
 }
 
 function nextTasksForPupil(pupil) {
@@ -1627,6 +1721,8 @@ function analysePupil(pupil) {
   if (marked.length === 0) {
     return {
       marked,
+      totalScore: null,
+      totalMax: null,
       overallPercentage: null,
       calculatedGrade: "",
       tone: toneForOverall(null),
@@ -1642,6 +1738,8 @@ function analysePupil(pupil) {
 
   return {
     marked,
+    totalScore,
+    totalMax,
     overallPercentage,
     calculatedGrade: gradeForPercentage(overallPercentage),
     tone: toneForOverall(overallPercentage),
@@ -1649,6 +1747,11 @@ function analysePupil(pupil) {
     averageTopics: marked.filter((question) => question.band === "average"),
     badTopics: marked.filter((question) => question.band === "bad"),
   };
+}
+
+function rawMarkText(analysis, fallback = "-") {
+  if (analysis.totalScore === null || analysis.totalMax === null) return fallback;
+  return `${analysis.totalScore}/${analysis.totalMax}`;
 }
 
 function buildFeedbackText(pupil) {
@@ -1881,7 +1984,9 @@ function renderPupilRows() {
   pupilRowsEl.innerHTML = pupils.map((pupil, pupilIndex) => {
     if (!filteredIndexes.has(pupilIndex)) return "";
     const analysis = analysePupil(pupil);
-    const percentageText = analysis.overallPercentage === null ? "-" : `${analysis.overallPercentage}%`;
+    const percentageText = analysis.overallPercentage === null
+      ? "-"
+      : `${rawMarkText(analysis)} · ${analysis.overallPercentage}%`;
     const calculatedGrade = analysis.calculatedGrade || "";
     const selectedClass = pupil.id === selectedPupilId ? " selected-row" : "";
     const scoreCells = questions.map((question, questionIndex) => {
@@ -2321,7 +2426,9 @@ function renderSelectedFeedback() {
 
   selectedPupilNameEl.textContent = pupil.name;
   selectedPupilNoteEl.value = pupil.note || "";
-  overallScoreEl.textContent = analysis.overallPercentage === null ? "0%" : `${analysis.overallPercentage}%`;
+  overallScoreEl.textContent = analysis.overallPercentage === null
+    ? "0%"
+    : `${rawMarkText(analysis)} · ${analysis.overallPercentage}%`;
   overallBandEl.textContent = analysis.calculatedGrade ? `${analysis.tone.label} · ${analysis.calculatedGrade}` : analysis.tone.label;
   feedbackOutputEl.innerHTML = `
     <section>
@@ -2510,7 +2617,11 @@ function updatePupilOutputs() {
     const bandCell = pupilRowsEl.querySelector(`[data-pupil-output="band"][data-pupil-index="${pupilIndex}"]`);
     const gradeInput = pupilRowsEl.querySelector(`[data-pupil-field="grade"][data-pupil-index="${pupilIndex}"]`);
 
-    if (percentageCell) percentageCell.textContent = analysis.overallPercentage === null ? "-" : `${analysis.overallPercentage}%`;
+    if (percentageCell) {
+      percentageCell.textContent = analysis.overallPercentage === null
+        ? "-"
+        : `${rawMarkText(analysis)} · ${analysis.overallPercentage}%`;
+    }
     if (bandCell) bandCell.textContent = analysis.overallPercentage === null ? "-" : analysis.tone.label;
     if (gradeInput) {
       gradeInput.placeholder = analysis.calculatedGrade || "-";
@@ -2941,20 +3052,37 @@ wordingVariantsEl.addEventListener("click", (event) => {
 });
 
 generateAiPromptButton.addEventListener("click", () => {
-  const promptPupils = pupilsForPromptScope();
-  if (promptPupils.length === 0) {
-    aiFeedbackStatusEl.textContent = "No pupils match this prompt scope.";
-    return;
-  }
-  aiPromptOutputEl.value = buildChatGptPrompt();
-  aiPromptOutputEl.hidden = false;
-  copyAiPromptButton.hidden = false;
-  aiFeedbackStatusEl.textContent = `Prompt generated for ${promptPupils.length} pupil${promptPupils.length === 1 ? "" : "s"}.`;
+  showGeneratedAiPrompt();
+});
+
+generateCohortAiPromptButton.addEventListener("click", () => {
+  aiPromptScopeEl.value = "all";
+  showGeneratedAiPrompt();
+});
+
+exportDeterministicCommentsButton.addEventListener("click", () => {
+  const baseName = safeDownloadName(saveNameInput.value, "physics-cohort");
+  downloadTextFile(
+    deterministicCommentsCsv(pupils),
+    `${baseName}-deterministic-feedback.csv`,
+    "text/csv;charset=utf-8",
+  );
+  aiFeedbackStatusEl.textContent = `Exported deterministic feedback for ${pupils.length} pupil${pupils.length === 1 ? "" : "s"}.`;
 });
 
 copyAiPromptButton.addEventListener("click", () => {
   copyText(aiPromptOutputEl.value || "", copyAiPromptButton);
   aiFeedbackStatusEl.textContent = "Prompt copied. Paste it into ChatGPT and review the returned comments.";
+});
+
+downloadAiPromptButton.addEventListener("click", () => {
+  const baseName = safeDownloadName(saveNameInput.value, "physics-cohort");
+  downloadTextFile(
+    aiPromptOutputEl.value || "",
+    `${baseName}-chatgpt-prompt.txt`,
+    "text/plain;charset=utf-8",
+  );
+  aiFeedbackStatusEl.textContent = "Prompt file downloaded. Upload or paste it into ChatGPT.";
 });
 
 feedbackReviewListEl.addEventListener("input", (event) => {
@@ -3866,6 +3994,7 @@ function exportCsv() {
     "Optional extra note",
     ...questions.map((question) => `Q${question.number}`),
     ...questions.map((question) => `Q${question.number} diagnostic`),
+    "Raw mark",
     "Overall %",
     "Band",
     "Grade",
@@ -3880,6 +4009,7 @@ function exportCsv() {
       pupil.note || "",
       ...pupil.scores,
       ...questions.map((_, index) => (pupil.diagnostics?.[index] || []).map((value) => diagnosticOptions[value]).join("; ")),
+      rawMarkText(feedback.analysis, ""),
       feedback.analysis.overallPercentage ?? "",
       feedback.analysis.overallPercentage === null ? "" : feedback.analysis.tone.label,
       pupil.grade || feedback.analysis.calculatedGrade,
@@ -4118,9 +4248,10 @@ function importExamStructure(text) {
 function plainFeedbackForPupil(pupil) {
   const feedback = finalFeedbackForPupil(pupil);
   const percentage = feedback.analysis.overallPercentage === null ? "No marks yet" : `${feedback.analysis.overallPercentage}%`;
+  const rawMark = rawMarkText(feedback.analysis, "No marks yet");
   const grade = pupil.grade || feedback.analysis.calculatedGrade || "-";
 
-  return `${pupil.name} (${percentage}, grade ${grade})
+  return `${pupil.name} (${rawMark}, ${percentage}, grade ${grade})
 
 What went well
 ${feedback.whatWentWell}
