@@ -23,15 +23,28 @@
             <button id="paste-marks" type="button" class="secondary-action">Paste marks</button>
             <button id="import-csv" type="button" class="secondary-action">Import marks</button>
             <button id="import-structure" type="button" class="secondary-action">Import structure/template</button>
-            <button id="export-csv" type="button" class="secondary-action">Export CSV</button>
-            <button id="print-reports" type="button" class="secondary-action">Report pack</button>
-            <button id="export-summary" type="button" class="secondary-action">Summary</button>
-            <button id="copy-all-feedback" type="button" class="secondary-action">Copy all</button>
+            <details class="export-menu">
+              <summary>Export</summary>
+              <div>
+                <button id="export-csv" type="button" class="secondary-action">Cohort CSV</button>
+                <button id="print-reports" type="button" class="secondary-action">Report pack</button>
+                <button id="export-summary" type="button" class="secondary-action">Department summary</button>
+                <button id="copy-all-feedback" type="button" class="secondary-action">Copy all feedback</button>
+              </div>
+            </details>
             <button id="copy-feedback" type="button" class="primary-action">Copy selected</button>
           </div>
           <input id="csv-file" type="file" accept=".csv,.tsv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
           <input id="structure-file" type="file" accept=".csv,.json,text/csv,application/json" hidden>
         </header>
+
+        <section id="import-undo-banner" class="import-undo-banner hidden" aria-live="polite">
+          <div>
+            <strong>Import complete</strong>
+            <p id="import-undo-message">The previous cohort can still be restored.</p>
+          </div>
+          <button id="undo-import" type="button" class="primary-action">Undo import</button>
+        </section>
 
         <section id="autosave-recovery" class="autosave-recovery hidden" aria-live="polite">
           <div>
@@ -250,6 +263,7 @@
             </div>
             <div class="action-row">
               <button id="add-question" type="button" class="primary-action">Add question</button>
+              <button id="suggest-structure" type="button" class="secondary-action">Suggest missing structure</button>
               <button id="reset-topics" type="button" class="secondary-action">Reset topics</button>
             </div>
           </div>
@@ -587,7 +601,7 @@
           <div class="section-heading compact-heading">
             <div>
               <h3 id="ai-feedback-title">ChatGPT prompt generator</h3>
-              <p>Creates a prompt from the deterministic feedback plans. Pupil names are reduced to first name and surname initial.</p>
+              <p>Uses anonymous pupil codes. Full names stay inside this browser and are restored after the ChatGPT response is pasted back.</p>
             </div>
           </div>
           <div class="ai-feedback-grid">
@@ -614,6 +628,30 @@
                 <option value="text">Plain-text pupil blocks</option>
               </select>
             </label>
+            <label>
+              Rewrite approach
+              <select id="ai-rewrite-level">
+                <option value="natural">Make more natural</option>
+                <option value="light">Lightly polish</option>
+                <option value="full">Rewrite fully</option>
+              </select>
+            </label>
+            <label>
+              WWW maximum words
+              <input id="ai-www-word-limit" type="number" min="20" max="120" value="55">
+            </label>
+            <label>
+              EBI maximum words
+              <input id="ai-ebi-word-limit" type="number" min="20" max="120" value="65">
+            </label>
+            <label class="ai-note-option">
+              <input id="ai-include-notes" type="checkbox">
+              Include optional extra notes
+            </label>
+            <label class="ai-note-option">
+              <input id="ai-vary-cohort-wording" type="checkbox" checked>
+              Vary wording across the cohort
+            </label>
           </div>
           <div class="action-row">
             <button id="generate-ai-prompt" type="button" class="primary-action">Generate prompt</button>
@@ -624,6 +662,18 @@
           </div>
           <p id="ai-feedback-status" class="save-status">Paste the generated prompt into ChatGPT, then review the returned comments before using them.</p>
           <textarea id="ai-prompt-output" class="ai-prompt-output" readonly hidden></textarea>
+          <section id="ai-response-panel" class="ai-response-panel" hidden>
+            <h4>Restore pupil names locally</h4>
+            <p>Paste ChatGPT's response below. The generator will replace P01, P02 and similar codes with the full pupil names.</p>
+            <textarea id="ai-response-input" class="ai-prompt-output" placeholder="Paste the response from ChatGPT here"></textarea>
+            <div id="ai-response-validation" class="response-validation" aria-live="polite"></div>
+            <div class="action-row">
+              <button id="restore-ai-names" type="button" class="primary-action">Restore names</button>
+              <button id="copy-restored-feedback" type="button" class="secondary-action" hidden>Copy Firefly feedback</button>
+              <button id="download-restored-feedback" type="button" class="secondary-action" hidden>Download feedback</button>
+            </div>
+            <textarea id="ai-restored-output" class="ai-prompt-output" readonly hidden></textarea>
+          </section>
         </section>
         <section class="diagnostics-panel advanced-panel" aria-labelledby="diagnostics-title">
           <h3 id="diagnostics-title">Pupil diagnostics</h3>

@@ -164,12 +164,17 @@ let autosaveTimer = null;
 let isApplyingState = false;
 let autosaveReady = false;
 let lastImportIssues = [];
+let lastAiPromptMapping = [];
+let dismissedStructureSuggestions = new Set();
 
 const topicRowsEl = document.querySelector("#topic-rows");
 const pupilRowsEl = document.querySelector("#pupil-rows");
 const pupilScoreHeadEl = document.querySelector("#pupil-score-head");
 const appShellEl = document.querySelector(".app-shell");
 const feedbackPanelEl = document.querySelector(".feedback-panel");
+const importUndoBannerEl = document.querySelector("#import-undo-banner");
+const importUndoMessageEl = document.querySelector("#import-undo-message");
+const undoImportButton = document.querySelector("#undo-import");
 const toggleAdvancedButton = document.querySelector("#toggle-advanced");
 const setupGuideEl = document.querySelector(".setup-guide");
 const guideImportStatusEl = document.querySelector("#guide-import-status");
@@ -204,6 +209,7 @@ const gradeBoundaryGridEl = document.querySelector("#grade-boundary-grid");
 const gradeDistributionSummaryEl = document.querySelector("#grade-distribution-summary");
 const gradePreviewRowsEl = document.querySelector("#grade-preview-rows");
 const suggestGradeBoundariesButton = document.querySelector("#suggest-grade-boundaries");
+const suggestStructureButton = document.querySelector("#suggest-structure");
 const applyCalculatedGradesButton = document.querySelector("#apply-calculated-grades");
 const reportIncludeGradeEl = document.querySelector("#report-include-grade");
 const reportIncludeTopicTableEl = document.querySelector("#report-include-topic-table");
@@ -221,6 +227,11 @@ const wordingVariantsEl = document.querySelector("#wording-variants");
 const aiKeyStageEl = document.querySelector("#ai-key-stage");
 const aiPromptScopeEl = document.querySelector("#ai-prompt-scope");
 const aiOutputFormatEl = document.querySelector("#ai-output-format");
+const aiRewriteLevelEl = document.querySelector("#ai-rewrite-level");
+const aiWwwWordLimitEl = document.querySelector("#ai-www-word-limit");
+const aiEbiWordLimitEl = document.querySelector("#ai-ebi-word-limit");
+const aiIncludeNotesEl = document.querySelector("#ai-include-notes");
+const aiVaryCohortWordingEl = document.querySelector("#ai-vary-cohort-wording");
 const generateAiPromptButton = document.querySelector("#generate-ai-prompt");
 const generateCohortAiPromptButton = document.querySelector("#generate-cohort-ai-prompt");
 const exportDeterministicCommentsButton = document.querySelector("#export-deterministic-comments");
@@ -228,6 +239,13 @@ const copyAiPromptButton = document.querySelector("#copy-ai-prompt");
 const downloadAiPromptButton = document.querySelector("#download-ai-prompt");
 const aiFeedbackStatusEl = document.querySelector("#ai-feedback-status");
 const aiPromptOutputEl = document.querySelector("#ai-prompt-output");
+const aiResponsePanelEl = document.querySelector("#ai-response-panel");
+const aiResponseInputEl = document.querySelector("#ai-response-input");
+const aiResponseValidationEl = document.querySelector("#ai-response-validation");
+const restoreAiNamesButton = document.querySelector("#restore-ai-names");
+const copyRestoredFeedbackButton = document.querySelector("#copy-restored-feedback");
+const downloadRestoredFeedbackButton = document.querySelector("#download-restored-feedback");
+const aiRestoredOutputEl = document.querySelector("#ai-restored-output");
 const overallScoreEl = document.querySelector("#overall-score");
 const overallBandEl = document.querySelector("#overall-band");
 const selectedPupilNameEl = document.querySelector("#selected-pupil-name");
@@ -579,9 +597,10 @@ function cloneState() {
   return JSON.parse(JSON.stringify(getAppState()));
 }
 
-function pushUndo() {
+function pushUndo(context = "change") {
   undoState = cloneState();
   undoChangeButton.disabled = false;
+  if (context !== "import") importUndoBannerEl.classList.add("hidden");
 }
 
 function restoreUndo() {
@@ -593,8 +612,14 @@ function restoreUndo() {
   const state = undoState;
   undoState = null;
   undoChangeButton.disabled = true;
+  importUndoBannerEl.classList.add("hidden");
   applyAppState(state);
   setSaveStatus("Restored the previous state.");
+}
+
+function showImportUndo(message) {
+  importUndoMessageEl.textContent = message;
+  importUndoBannerEl.classList.remove("hidden");
 }
 
 function getTopicStats() {
@@ -1038,19 +1063,48 @@ function updateSetupGuide() {
     && Boolean(question.type)
     && question.skills.length > 0
   )).length;
+  const firstStructureIssue = questions
+    .map((question, index) => {
+      const missing = [];
+      if (!question.topic.trim()) missing.push("topic");
+      if (!(Number(question.max) > 0)) missing.push("maximum mark");
+      if (!question.type) missing.push("type");
+      if (!question.skills.length) missing.push("skills");
+      return missing.length > 0 ? { index, question, missing } : null;
+    })
+    .find(Boolean);
+  const firstIncompletePupil = pupils.findIndex((pupil) => (
+    questions.some((_, index) => parseOptionalNumber(pupil.scores[index]) === null)
+  ));
 
   guideImportStatusEl.textContent = markedPupils > 0
     ? `${markedPupils}/${pupils.length} pupils have marks`
     : "Choose a spreadsheet";
-  guideStructureStatusEl.textContent = `${structuredQuestions}/${questions.length} questions fully described`;
-  guideReviewStatusEl.textContent = completePupils > 0
-    ? `${completePupils}/${pupils.length} comments ready`
-    : "Add marks to create comments";
+  guideStructureStatusEl.textContent = firstStructureIssue
+    ? `Q${firstStructureIssue.question.number} needs ${formatTopicList(firstStructureIssue.missing)}`
+    : `${structuredQuestions}/${questions.length} questions fully described`;
+  guideReviewStatusEl.textContent = firstIncompletePupil >= 0
+    ? `${pupils[firstIncompletePupil].name || `Pupil ${firstIncompletePupil + 1}`} has missing marks`
+    : `${completePupils}/${pupils.length} comments ready`;
   guideExportStatusEl.textContent = completePupils === pupils.length && pupils.length > 0
     ? "Ready to create the Firefly prompt"
-    : `${completePupils}/${pupils.length} complete pupils`;
+    : firstStructureIssue
+      ? "Complete the exam structure first"
+      : `${completePupils}/${pupils.length} complete pupils`;
 
   const steps = setupGuideEl.querySelectorAll(".setup-step");
+  steps.forEach((step) => {
+    delete step.dataset.guideQuestion;
+    delete step.dataset.guideField;
+    delete step.dataset.guidePupil;
+  });
+  if (firstStructureIssue && steps[1]) {
+    steps[1].dataset.guideQuestion = String(firstStructureIssue.index);
+    steps[1].dataset.guideField = firstStructureIssue.missing[0];
+  }
+  if (firstIncompletePupil >= 0 && steps[2]) {
+    steps[2].dataset.guidePupil = String(firstIncompletePupil);
+  }
   steps[0]?.classList.toggle("is-ready", markedPupils > 0);
   steps[1]?.classList.toggle("is-ready", structuredQuestions === questions.length && questions.length > 0);
   steps[2]?.classList.toggle("is-ready", completePupils > 0);
@@ -1366,6 +1420,61 @@ function supportingPatternDetail(pattern, purpose) {
   return "";
 }
 
+function patternContext(pattern) {
+  if (!pattern) return "";
+  if (pattern.kind === "typeSkill" || pattern.kind === "type") {
+    return `${namedQuestionType(pattern.type)}-style questions`;
+  }
+  if (pattern.kind === "groupSkill" || pattern.kind === "group") {
+    return `${pattern.group} questions`;
+  }
+  if (pattern.kind === "topic") return pattern.label;
+  return pattern.count > 1 ? `${pattern.count} questions` : `Q${pattern.questions[0]?.number}`;
+}
+
+function synthesisedPatternSentence(pattern, purpose, seed) {
+  const base = patternSentence(pattern, purpose, seed);
+  if (!pattern) return base;
+
+  const patternNamesSkill = ["typeSkill", "groupSkill", "skill"].includes(pattern.kind);
+  const commonSkills = skillPerformanceSummary(pattern.questions).slice(0, 2);
+  const diagnostics = pattern.questions
+    .flatMap((question) => question.diagnostics || [])
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .map((value) => diagnosticOptions[value]?.toLowerCase())
+    .filter(Boolean);
+
+  if (!patternNamesSkill && commonSkills.length > 0) {
+    const skillText = formatTopicList(commonSkills);
+    return purpose === "strength"
+      ? `${base.replace(/\.$/, "")}, particularly where ${skillText} was needed.`
+      : `${base.replace(/\.$/, "")}; focus especially on ${skillText}.`;
+  }
+
+  if (purpose === "target" && pattern.kind !== "diagnostic" && diagnostics.length > 0) {
+    return `${base.replace(/\.$/, "")}, with ${diagnostics[0]} the repeated issue.`;
+  }
+
+  return base;
+}
+
+function strengthToTargetLink(strengthPattern, targetPattern) {
+  if (!strengthPattern || !targetPattern) return "";
+  const strengthContext = patternContext(strengthPattern);
+  const targetContext = patternContext(targetPattern);
+  if (!strengthContext || !targetContext || strengthContext === targetContext) return "";
+
+  if (strengthPattern.skill && strengthPattern.skill === targetPattern.skill) {
+    return `Build on the secure approach shown in ${strengthContext} by applying the same ${skillPhrase(strengthPattern.skill)} more consistently in ${targetContext}.`;
+  }
+
+  if (strengthPattern.type && strengthPattern.type === targetPattern.type) {
+    return `Use the method that worked in ${strengthContext} as a model when revisiting ${targetContext}.`;
+  }
+
+  return `Carry the careful approach shown in ${strengthContext} into ${targetContext}.`;
+}
+
 function patternSentence(pattern, purpose, seed) {
   if (!pattern) return "";
   const questionText = pattern.count > 1
@@ -1512,20 +1621,32 @@ function serialisePattern(pattern) {
   };
 }
 
-function promptSafePupilName(name) {
-  const normalised = String(name || "").trim().replace(/\s+/g, " ");
-  if (!normalised) return "Pupil";
+function pupilPromptCode(index) {
+  return `P${String(index + 1).padStart(2, "0")}`;
+}
 
-  if (normalised.includes(",")) {
-    const [surnamePart, givenPart] = normalised.split(",", 2).map((part) => part.trim());
-    const firstName = givenPart.split(" ")[0] || "Pupil";
-    const surnameInitial = surnamePart.charAt(0).toUpperCase();
-    return surnameInitial ? `${firstName} ${surnameInitial}` : firstName;
-  }
+function sanitisePromptNote(note, pupilName) {
+  let text = String(note || "").trim();
+  if (!text) return "";
+  const nameVariants = [
+    String(pupilName || "").trim(),
+    ...String(pupilName || "").trim().split(/[\s,]+/).filter((part) => part.length >= 3),
+  ].filter(Boolean).sort((a, b) => b.length - a.length);
+  nameVariants.forEach((variant) => {
+    const escapedName = variant.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    text = text.replace(new RegExp(`\\b${escapedName}\\b`, "gi"), "the pupil");
+  });
+  return text.replace(/\bthe pupil(?:\s+the pupil)+\b/gi, "the pupil");
+}
 
-  const parts = normalised.split(" ");
-  if (parts.length === 1) return parts[0];
-  return `${parts[0]} ${parts[parts.length - 1].charAt(0).toUpperCase()}`;
+function promptPrivacyWarnings(promptPupils) {
+  const sensitivePattern = /\b(send|sen|ehcp|dyslex|adhd|autis|medical|diagnos|anxiety|depress|bereav|family|parent|carer|medication|disab)/i;
+  return promptPupils.flatMap((pupil, index) => {
+    const note = String(pupil.note || "");
+    return sensitivePattern.test(note)
+      ? [`${pupilPromptCode(index)} has an optional note that may contain sensitive personal information.`]
+      : [];
+  });
 }
 
 function aiReadyFeedbackPlan(pupil, pupilName = pupil.name) {
@@ -1564,6 +1685,28 @@ function aiStageInstruction(stage) {
   return labels[stage] || labels.alevel;
 }
 
+function aiRewriteInstruction(level) {
+  const instructions = {
+    light: "Lightly polish the deterministic wording. Preserve its sentence structure and content unless a small change improves flow or removes repetition.",
+    natural: "Make the deterministic wording sound natural and individualised. You may restructure sentences, but preserve every judgement and priority.",
+    full: "Rewrite the comments fully into fluent teacher-quality prose while preserving the supplied evidence, judgement, emphasis, and actionable target.",
+  };
+  return instructions[level] || instructions.natural;
+}
+
+function aiPerformanceGuidance(percentage) {
+  const goodThreshold = Number(goodThresholdEl.value || 70);
+  const averageThreshold = Number(averageThresholdEl.value || 40);
+  if (percentage === null) return "No complete performance judgement is available; keep the wording cautious.";
+  if (percentage >= goodThreshold) {
+    return "High performance: sound warm and assured, acknowledge secure understanding, and frame EBI as refinement rather than remediation.";
+  }
+  if (percentage >= averageThreshold) {
+    return "Middle performance: balance genuine strengths with a clear, achievable priority. Avoid bland or non-committal wording.";
+  }
+  return "Lower performance: remain encouraging and specific, recognise any genuine success, and give one manageable priority without sounding discouraging.";
+}
+
 function aiFeedbackInstructions(stage) {
   return [
     "You are polishing exam feedback for a UK Physics pupil.",
@@ -1576,17 +1719,28 @@ function aiFeedbackInstructions(stage) {
   ].join(" ");
 }
 
-function deterministicFeedbackPackage(pupil) {
+function deterministicFeedbackPackage(pupil, index, includeNotes = false) {
   const feedback = finalFeedbackForPupil(pupil);
   const analysis = feedback.analysis || analysePupil(pupil);
-  const promptName = promptSafePupilName(pupil.name);
+  const promptCode = pupilPromptCode(index);
   return {
-    pupil: promptName,
-    classGroup: pupil.classGroup || "",
+    pupilCode: promptCode,
     rawMark: rawMarkText(analysis, ""),
     percentageMark: analysis.overallPercentage,
+    performanceTone: aiPerformanceGuidance(analysis.overallPercentage),
+    availableQuestionEvidence: analysis.marked.map((question) => ({
+      question: `Q${question.number}`,
+      topic: question.topic,
+      percentage: question.percentage,
+      band: question.band,
+      skills: question.skills.map((skill) => skillOptions[skill] || skill),
+      diagnostics: question.diagnostics.map((diagnostic) => diagnosticOptions[diagnostic] || diagnostic),
+    })),
     grade: pupil.grade || analysis.calculatedGrade || "",
-    plan: aiReadyFeedbackPlan(pupil, promptName),
+    plan: {
+      ...aiReadyFeedbackPlan(pupil, promptCode),
+      optionalExtraNote: includeNotes ? sanitisePromptNote(pupil.note, pupil.name) : "",
+    },
     deterministicComment: {
       whatWentWell: feedback.generated.whatWentWell,
       evenBetterIf: feedback.generated.evenBetterIf,
@@ -1606,12 +1760,17 @@ function pupilsForPromptScope() {
 function buildChatGptPrompt() {
   const stage = aiKeyStageEl.value || "alevel";
   const outputFormat = aiOutputFormatEl.value || "firefly";
+  const rewriteLevel = aiRewriteLevelEl.value || "natural";
+  const wwwWordLimit = Math.min(Math.max(Number(aiWwwWordLimitEl.value) || 55, 20), 120);
+  const ebiWordLimit = Math.min(Math.max(Number(aiEbiWordLimitEl.value) || 65, 20), 120);
   const promptPupils = pupilsForPromptScope();
+  const includeNotes = aiIncludeNotesEl.checked;
+  const varyCohortWording = aiVaryCohortWordingEl.checked;
   const outputInstructions = outputFormat === "firefly"
     ? {
-      format: "Return the feedback in a Firefly-ready copy/paste format. Use one pupil per block. The heading must contain the pupil name followed by their raw mark and percentage mark, then What went well and Even better if underneath. Do not use a table or CSV.",
+      format: "Return the feedback in a Firefly-ready copy/paste format. Use one pupil per block. The heading must contain the anonymous pupil code followed by the raw mark and percentage mark, then What went well and Even better if underneath. Do not use a table or CSV.",
       template: [
-        "<Pupil name> - <raw mark, e.g. 45/80> - <percentage mark>%",
+        "<Pupil code> - <raw mark, e.g. 45/80> - <percentage mark>%",
         "What went well",
         "<polished comment>",
         "Even better if",
@@ -1619,7 +1778,7 @@ function buildChatGptPrompt() {
       ],
       rules: [
         "Include every pupil in the supplied order.",
-        "State the supplied raw mark and percentage mark explicitly beside every pupil's name.",
+        "State the supplied raw mark and percentage mark explicitly beside every pupil code.",
         "Put one blank line between pupil blocks.",
         "Do not add bullets, numbering, tables, CSV formatting, an introduction, or a conclusion.",
         "Keep each pupil's two comments ready to copy directly into Firefly.",
@@ -1628,7 +1787,7 @@ function buildChatGptPrompt() {
     : {
       format: "Return one continuous plain-text document containing the complete cohort, with no introductory or closing commentary.",
       template: [
-        "<Pupil name> - <raw mark, e.g. 45/80> - <percentage mark>%",
+        "<Pupil code> - <raw mark, e.g. 45/80> - <percentage mark>%",
         "What went well",
         "<polished comment>",
         "Even better if",
@@ -1636,7 +1795,7 @@ function buildChatGptPrompt() {
       ],
       rules: [
         "Include every pupil in the supplied order.",
-        "State the supplied raw mark and percentage mark explicitly beside every pupil's name.",
+        "State the supplied raw mark and percentage mark explicitly beside every pupil code.",
         "Separate pupils with one blank line.",
         "Do not use a table or CSV.",
       ],
@@ -1644,20 +1803,43 @@ function buildChatGptPrompt() {
   const payload = {
     keyStage: stage,
     stageGuidance: aiStageInstruction(stage),
-    task: "Rewrite all supplied deterministic feedback comments so they sound natural and individualised, then return the complete set as one file-ready response.",
+    rewriteApproach: aiRewriteInstruction(rewriteLevel),
+    wordLimits: {
+      whatWentWellMaximum: wwwWordLimit,
+      evenBetterIfMaximum: ebiWordLimit,
+    },
+    evidencePriority: [
+      "1. The selected whatWentWellPattern and evenBetterIfPattern.",
+      "2. An included optionalExtraNote, which must be placed in Even better if.",
+      "3. Repeated question skills and diagnostics supported by more than one question.",
+      "4. Individual topic or question evidence.",
+      "5. nextTasks, used only to make an existing target actionable.",
+      "6. The deterministicComment as a wording and judgement reference.",
+    ],
+    task: "Produce natural, individualised UK Physics feedback for every supplied pupil while preserving the deterministic evidence and judgement.",
     rules: [
       "Use only the evidence supplied for each pupil.",
-      "Use only the privacy-reduced pupil name supplied in each record. Do not attempt to infer or expand the surname.",
+      "Use only the anonymous pupil code supplied in each record. Do not invent, infer, or request pupil names.",
       "Do not invent topics, marks, grades, question numbers, diagnoses, or causes.",
       "Write directly to each pupil using 'you'. Do not write 'the student'.",
       "Keep separate labelled sections: What went well and Even better if.",
-      "Preserve the main WWW and EBI patterns chosen by the deterministic planner.",
-      "Use the supplied percentage mark to calibrate the overall tone and reproduce both the raw mark and percentage exactly beside the pupil's name in the heading.",
-      "Avoid repetitive phrasing across pupils where possible.",
+      `What went well must contain no more than ${wwwWordLimit} words. Even better if must contain no more than ${ebiWordLimit} words.`,
+      "Follow the evidence priority in order. Lower-priority evidence must not displace or contradict a selected pattern.",
+      "Merge overlapping topic, skill, diagnostic, and revision-task points into one natural idea. Do not restate the same target using different labels.",
+      "A revision task may follow an improvement point only when it adds a distinct concrete action rather than repeating the advice.",
+      "Use the supplied performanceTone and percentage mark to calibrate warmth, confidence, and challenge.",
+      "Reproduce both the raw mark and percentage exactly beside the pupil code in the heading.",
+      varyCohortWording
+        ? "Vary sentence openings, rhythm, and phrasing across the cohort. Do not vary the underlying standard, judgement, or evidence."
+        : "Use consistent phrasing across the cohort where pupils have equivalent evidence.",
+      "Avoid generic praise such as 'well done', 'good effort', or 'keep it up' unless the evidence makes the statement specific.",
       "Return one result per pupil in the same order.",
+      includeNotes
+        ? "Optional extra notes are included. Treat them as teacher-provided wording and do not infer further personal information."
+        : "Optional extra notes have been excluded for privacy.",
     ],
     outputInstructions,
-    pupils: promptPupils.map(deterministicFeedbackPackage),
+    pupils: promptPupils.map((pupil, index) => deterministicFeedbackPackage(pupil, index, includeNotes)),
   };
 
   return `You are helping polish UK Physics exam feedback comments.\n\n${JSON.stringify(payload, null, 2)}`;
@@ -1689,11 +1871,151 @@ function showGeneratedAiPrompt() {
     return;
   }
   aiPromptOutputEl.value = buildChatGptPrompt();
+  const wwwWordLimit = Math.min(Math.max(Number(aiWwwWordLimitEl.value) || 55, 20), 120);
+  const ebiWordLimit = Math.min(Math.max(Number(aiEbiWordLimitEl.value) || 65, 20), 120);
+  lastAiPromptMapping = promptPupils.map((pupil, index) => {
+    const code = pupilPromptCode(index);
+    const analysis = analysePupil(pupil);
+    const plan = aiReadyFeedbackPlan(pupil, code);
+    return {
+      code,
+      name: pupil.name,
+      rawMark: rawMarkText(analysis, ""),
+      percentage: analysis.overallPercentage,
+      allowedQuestions: analysis.marked.map((question) => `Q${question.number}`),
+      allowedTopics: [...new Set(analysis.marked.map((question) => question.topic).filter(Boolean))],
+      wwwWordLimit,
+      ebiWordLimit,
+    };
+  });
   aiPromptOutputEl.hidden = false;
   copyAiPromptButton.hidden = false;
   downloadAiPromptButton.hidden = false;
+  aiResponsePanelEl.hidden = false;
+  aiResponseInputEl.value = "";
+  aiResponseValidationEl.innerHTML = "";
+  aiResponseValidationEl.className = "response-validation";
+  aiRestoredOutputEl.value = "";
+  aiRestoredOutputEl.hidden = true;
+  copyRestoredFeedbackButton.hidden = true;
+  downloadRestoredFeedbackButton.hidden = true;
   const fileLabel = aiOutputFormatEl.value === "firefly" ? "Firefly-ready pupil blocks" : "plain-text pupil blocks";
-  aiFeedbackStatusEl.textContent = `Prompt generated for ${promptPupils.length} pupil${promptPupils.length === 1 ? "" : "s"}; ChatGPT will be asked to return ${fileLabel}.`;
+  const privacyWarnings = aiIncludeNotesEl.checked ? promptPrivacyWarnings(promptPupils) : [];
+  aiFeedbackStatusEl.textContent = privacyWarnings.length > 0
+    ? `Prompt generated with anonymous codes. Privacy check: ${privacyWarnings.join(" ")} Review or remove that note before copying.`
+    : `Prompt generated for ${promptPupils.length} pupil${promptPupils.length === 1 ? "" : "s"} using anonymous codes; ChatGPT will be asked to return ${fileLabel}.`;
+}
+
+function restorePupilNames(responseText) {
+  let restored = String(responseText || "").trim();
+  lastAiPromptMapping.forEach(({ code, name }) => {
+    const escapedCode = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    restored = restored.replace(new RegExp(`\\b${escapedCode}\\b`, "g"), name);
+  });
+  return restored;
+}
+
+function countWords(text) {
+  return String(text || "").trim().match(/\b[\w'*’-]+\b/g)?.length || 0;
+}
+
+function feedbackSectionsFromBlock(block) {
+  const wwwMatch = /what went well\s*:?\s*/i.exec(block);
+  const ebiMatch = /even better if\s*:?\s*/i.exec(block);
+  if (!wwwMatch || !ebiMatch || ebiMatch.index <= wwwMatch.index) {
+    return { heading: block.split(/\r?\n/)[0] || "", whatWentWell: "", evenBetterIf: "" };
+  }
+  return {
+    heading: block.slice(0, wwwMatch.index).trim(),
+    whatWentWell: block.slice(wwwMatch.index + wwwMatch[0].length, ebiMatch.index).trim(),
+    evenBetterIf: block.slice(ebiMatch.index + ebiMatch[0].length).trim(),
+  };
+}
+
+function validateAiResponse(responseText) {
+  const text = String(responseText || "").trim();
+  const errors = [];
+  if (!text) return { valid: false, errors: ["Paste the ChatGPT response to validate it."] };
+
+  const expectedCodes = lastAiPromptMapping.map(({ code }) => code);
+  const foundCodes = text.match(/\bP\d{2,}\b/g) || [];
+  const unknownCodes = [...new Set(foundCodes.filter((code) => !expectedCodes.includes(code)))];
+  if (unknownCodes.length > 0) errors.push(`Unknown pupil codes: ${unknownCodes.join(", ")}.`);
+  const recognisedOrder = foundCodes.filter((code) => expectedCodes.includes(code));
+  if (
+    recognisedOrder.length === expectedCodes.length
+    && recognisedOrder.some((code, index) => code !== expectedCodes[index])
+  ) {
+    errors.push("Pupil blocks are not in the original order.");
+  }
+
+  expectedCodes.forEach((code, index) => {
+    const mapping = lastAiPromptMapping[index];
+    const occurrences = foundCodes.filter((foundCode) => foundCode === code).length;
+    if (occurrences === 0) {
+      errors.push(`${code} is missing.`);
+      return;
+    }
+    if (occurrences > 1) {
+      errors.push(`${code} appears ${occurrences} times.`);
+      return;
+    }
+
+    const start = text.search(new RegExp(`\\b${code}\\b`));
+    const nextCode = expectedCodes.slice(index + 1)
+      .map((candidate) => ({ candidate, position: text.search(new RegExp(`\\b${candidate}\\b`)) }))
+      .find((item) => item.position > start);
+    const block = text.slice(start, nextCode?.position ?? text.length);
+    if (!/what went well/i.test(block)) errors.push(`${code} is missing "What went well".`);
+    if (!/even better if/i.test(block)) errors.push(`${code} is missing "Even better if".`);
+    const sections = feedbackSectionsFromBlock(block);
+
+    if (mapping.rawMark && !sections.heading.includes(mapping.rawMark)) {
+      errors.push(`${code} does not show the exact raw mark ${mapping.rawMark}.`);
+    }
+    if (mapping.percentage !== null && !sections.heading.includes(`${mapping.percentage}%`)) {
+      errors.push(`${code} does not show the exact percentage ${mapping.percentage}%.`);
+    }
+
+    const wwwWords = countWords(sections.whatWentWell);
+    const ebiWords = countWords(sections.evenBetterIf);
+    if (wwwWords > mapping.wwwWordLimit) {
+      errors.push(`${code} What went well is ${wwwWords} words; the maximum is ${mapping.wwwWordLimit}.`);
+    }
+    if (ebiWords > mapping.ebiWordLimit) {
+      errors.push(`${code} Even better if is ${ebiWords} words; the maximum is ${mapping.ebiWordLimit}.`);
+    }
+
+    const textWithoutKnownTopics = mapping.allowedTopics.reduce((remaining, topic) => {
+      const escapedTopic = topic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return remaining.replace(new RegExp(escapedTopic, "gi"), "");
+    }, block);
+    const questionReferences = [...new Set(textWithoutKnownTopics.match(/\bQ\d+\b/gi) || [])].map((item) => item.toUpperCase());
+    const unsupportedQuestions = questionReferences.filter((question) => !mapping.allowedQuestions.includes(question));
+    if (unsupportedQuestions.length > 0) {
+      errors.push(`${code} contains unsupported question references: ${unsupportedQuestions.join(", ")}.`);
+    }
+
+    const unsupportedTopics = questions
+      .map((question) => question.topic.trim())
+      .filter(Boolean)
+      .filter((topic) => block.toLowerCase().includes(topic.toLowerCase()) && !mapping.allowedTopics.includes(topic));
+    if (unsupportedTopics.length > 0) {
+      errors.push(`${code} contains unsupported topic references: ${unsupportedTopics.join(", ")}.`);
+    }
+  });
+
+  return { valid: errors.length === 0, errors };
+}
+
+function renderAiResponseValidation() {
+  const validation = validateAiResponse(aiResponseInputEl.value);
+  aiResponseValidationEl.classList.toggle("is-valid", validation.valid);
+  aiResponseValidationEl.classList.toggle("is-error", !validation.valid && aiResponseInputEl.value.trim().length > 0);
+  aiResponseValidationEl.innerHTML = validation.valid
+    ? `<strong>Response ready</strong><span>Codes, order, marks, percentages, headings, evidence references, and word limits all passed.</span>`
+    : validation.errors.map((error) => `<span>${escapeHtml(error)}</span>`).join("");
+  return validation;
 }
 
 function nextTasksForPupil(pupil) {
@@ -1813,10 +2135,9 @@ function buildFeedbackText(pupil) {
 
   const seed = `${pupil.name}-${analysis.overallPercentage}-${settings.tone}-${pupil.feedbackSeed || 0}`;
   const plan = buildFeedbackPlan(analysis, settings);
-  const strengthPatternSentence = patternSentence(plan.strengthPattern, "strength", `${seed}-strength-pattern`);
-  const targetPatternSentence = patternSentence(plan.targetPattern, "target", `${seed}-target-pattern`);
-  const strengthDetail = supportingPatternDetail(plan.strengthPattern, "strength");
-  const targetDetail = supportingPatternDetail(plan.targetPattern, "target");
+  const strengthPatternSentence = synthesisedPatternSentence(plan.strengthPattern, "strength", `${seed}-strength-pattern`);
+  const targetPatternSentence = synthesisedPatternSentence(plan.targetPattern, "target", `${seed}-target-pattern`);
+  const patternLink = strengthToTargetLink(plan.strengthPattern, plan.targetPattern);
   const strengthCommentDetails = plan.strengthPattern?.kind === "topic" ? mergeQuestionComments(plan.strengthPattern.questions) : "";
   const targetCommentDetails = plan.targetPattern?.kind === "topic" ? mergeQuestionComments(plan.targetPattern.questions) : "";
   const targetNotes = plan.targetQuestions
@@ -1853,7 +2174,6 @@ function buildFeedbackText(pupil) {
     ? [
       applyTone(analysis.tone.opener, settings),
       strengthPatternSentence,
-      strengthDetail,
       strengthCommentDetails,
     ]
     : [analysis.tone.opener, analysis.tone.fallbackWin];
@@ -1861,7 +2181,7 @@ function buildFeedbackText(pupil) {
   const ebiSentences = plan.targetQuestions.length > 0
     ? [
       `${toneSetting.targetLead}, ${targetPatternSentence.charAt(0).toLowerCase()}${targetPatternSentence.slice(1)}`,
-      targetDetail,
+      patternLink,
       revisionTaskText,
       targetCommentDetails,
       targetNotes,
@@ -1958,9 +2278,63 @@ function questionTypeSelect(question, index) {
   `;
 }
 
+function suggestQuestionStructure(question) {
+  const source = `${question.topic || ""} ${question.group || ""} ${question.note || ""}`.toLowerCase();
+  const rules = [
+    { type: "practical", pattern: /\b(practical|experiment|investigation|method|apparatus|uncertainty|uncertainties|risk assessment)\b/, reason: "practical or experimental wording" },
+    { type: "mcq", pattern: /\b(mcq|multiple choice)\b/, reason: "multiple-choice wording" },
+    { type: "graph", pattern: /\b(graph|gradient|intercept|plot|best fit|line of best fit)\b/, reason: "graph wording" },
+    { type: "definition", pattern: /\b(define|definition|what is meant by|key term)\b/, reason: "definition wording" },
+    { type: "extended", pattern: /\b(extended|six mark|6 mark|discuss|evaluate|explain in detail)\b/, reason: "extended-response wording" },
+    { type: "calculation", pattern: /\b(calculate|calculation|equation|numerical|rearrange|rearranging|significant figure|significant figures)\b/, reason: "calculation wording" },
+  ];
+  const inferredFromText = rules.find((rule) => rule.pattern.test(source));
+  const skillType = [
+    ["graph", ["graph"]],
+    ["extended", ["extended"]],
+    ["definition", ["definition"]],
+    ["calculation", ["calculationLayout", "rearranging", "sigfig"]],
+  ].find(([, skills]) => skills.some((skill) => question.skills?.includes(skill)));
+  const suggestedType = question.type || inferredFromText?.type || skillType?.[0] || "";
+  const suggestedSkills = suggestedType
+    ? (questionTypeOptions[suggestedType]?.skills || []).filter((skill) => !question.skills?.includes(skill))
+    : [];
+
+  if ((!question.type && !suggestedType) || (question.type && suggestedSkills.length === 0)) return null;
+  if (question.type && question.skills?.length > 0 && suggestedSkills.length === 0) return null;
+
+  return {
+    type: question.type ? "" : suggestedType,
+    skills: suggestedSkills,
+    reason: inferredFromText?.reason || (skillType ? "the skills already selected" : "the selected question type"),
+  };
+}
+
+function renderStructureSuggestion(question, index) {
+  if (dismissedStructureSuggestions.has(index)) return "";
+  const suggestion = suggestQuestionStructure(question);
+  if (!suggestion) return "";
+  const parts = [];
+  if (suggestion.type) parts.push(`type: ${questionTypeOptions[suggestion.type].label}`);
+  if (suggestion.skills.length > 0) {
+    parts.push(`skills: ${suggestion.skills.map((skill) => skillOptions[skill]).join(", ")}`);
+  }
+  return `
+    <aside class="structure-suggestion" aria-label="Suggested structure for question ${question.number}">
+      <strong>Suggested structure</strong>
+      <span>${escapeHtml(parts.join(" · "))}</span>
+      <small>Based on ${escapeHtml(suggestion.reason)}. Check it before applying.</small>
+      <div class="action-row">
+        <button type="button" class="primary-action small-action" data-apply-structure-suggestion="${index}">Apply</button>
+        <button type="button" class="secondary-action small-action" data-dismiss-structure-suggestion="${index}">Dismiss</button>
+      </div>
+    </aside>
+  `;
+}
+
 function renderTopicRows() {
   topicRowsEl.innerHTML = questions.map((question, index) => `
-    <tr>
+    <tr data-question-row="${index}">
       <td>Q${question.number}</td>
       <td>
         <div class="question-detail-stack">
@@ -1976,6 +2350,7 @@ function renderTopicRows() {
             Type
             ${questionTypeSelect(question, index)}
           </label>
+          ${renderStructureSuggestion(question, index)}
         </div>
       </td>
       <td>
@@ -2874,6 +3249,33 @@ topicRowsEl.addEventListener("change", (event) => {
 });
 
 topicRowsEl.addEventListener("click", (event) => {
+  const applySuggestionButton = event.target.closest("[data-apply-structure-suggestion]");
+  if (applySuggestionButton) {
+    const index = Number(applySuggestionButton.dataset.applyStructureSuggestion);
+    const suggestion = Number.isInteger(index) ? suggestQuestionStructure(questions[index]) : null;
+    if (suggestion) {
+      pushUndo();
+      if (suggestion.type) questions[index].type = suggestion.type;
+      const skills = new Set(questions[index].skills || []);
+      suggestion.skills.forEach((skill) => skills.add(skill));
+      questions[index].skills = [...skills].filter((skill) => skillOptions[skill]);
+      dismissedStructureSuggestions.delete(index);
+      rerenderAll();
+      setSaveStatus(`Applied the suggested structure to Q${questions[index].number}.`);
+    }
+    return;
+  }
+
+  const dismissSuggestionButton = event.target.closest("[data-dismiss-structure-suggestion]");
+  if (dismissSuggestionButton) {
+    const index = Number(dismissSuggestionButton.dataset.dismissStructureSuggestion);
+    if (Number.isInteger(index)) {
+      dismissedStructureSuggestions.add(index);
+      renderTopicRows();
+    }
+    return;
+  }
+
   const presetButton = event.target.closest("[data-skill-preset]");
   if (presetButton) {
     const index = Number(presetButton.dataset.questionIndex);
@@ -3132,6 +3534,47 @@ downloadAiPromptButton.addEventListener("click", () => {
   aiFeedbackStatusEl.textContent = "Prompt file downloaded. Upload or paste it into ChatGPT.";
 });
 
+restoreAiNamesButton.addEventListener("click", () => {
+  const response = aiResponseInputEl.value.trim();
+  if (!response) {
+    aiFeedbackStatusEl.textContent = "Paste the ChatGPT response before restoring names.";
+    return;
+  }
+  if (lastAiPromptMapping.length === 0) {
+    aiFeedbackStatusEl.textContent = "Generate a prompt first so the local pupil-code mapping is available.";
+    return;
+  }
+
+  const validation = renderAiResponseValidation();
+  if (!validation.valid) {
+    aiFeedbackStatusEl.textContent = "The ChatGPT response needs attention before names can be restored.";
+    return;
+  }
+  const restored = restorePupilNames(response);
+  aiRestoredOutputEl.value = restored;
+  aiRestoredOutputEl.hidden = false;
+  copyRestoredFeedbackButton.hidden = false;
+  downloadRestoredFeedbackButton.hidden = false;
+  aiFeedbackStatusEl.textContent = `Names restored locally for ${lastAiPromptMapping.length} pupil${lastAiPromptMapping.length === 1 ? "" : "s"}. The text is ready for Firefly.`;
+});
+
+aiResponseInputEl.addEventListener("input", renderAiResponseValidation);
+
+copyRestoredFeedbackButton.addEventListener("click", () => {
+  copyText(aiRestoredOutputEl.value || "", copyRestoredFeedbackButton);
+  aiFeedbackStatusEl.textContent = "Firefly-ready feedback copied with full names restored locally.";
+});
+
+downloadRestoredFeedbackButton.addEventListener("click", () => {
+  const baseName = safeDownloadName(saveNameInput.value, "physics-cohort");
+  downloadTextFile(
+    aiRestoredOutputEl.value || "",
+    `${baseName}-firefly-feedback.txt`,
+    "text/plain;charset=utf-8",
+  );
+  aiFeedbackStatusEl.textContent = "Firefly-ready feedback downloaded with full names restored locally.";
+});
+
 feedbackReviewListEl.addEventListener("input", (event) => {
   const textarea = event.target.closest("[data-feedback-review]");
   if (!textarea) return;
@@ -3169,6 +3612,14 @@ gradeScaleEl.addEventListener("change", () => {
 gradeBoundaryGridEl.addEventListener("input", updatePupilOutputs);
 gradeBoundaryGridEl.addEventListener("change", updatePupilOutputs);
 suggestGradeBoundariesButton.addEventListener("click", suggestGradeBoundaries);
+suggestStructureButton.addEventListener("click", () => {
+  dismissedStructureSuggestions = new Set();
+  renderTopicRows();
+  const suggestionCount = questions.filter((question) => suggestQuestionStructure(question)).length;
+  setSaveStatus(suggestionCount > 0
+    ? `${suggestionCount} structure suggestion${suggestionCount === 1 ? "" : "s"} ready to review.`
+    : "No reliable structure suggestions found. Select Mixed manually where needed.");
+});
 applyCalculatedGradesButton.addEventListener("click", applyCalculatedGrades);
 
 [
@@ -4034,7 +4485,7 @@ function applyExcelImport() {
     setSaveStatus("Choose a full-name column or separate first-name/surname columns.");
     return;
   }
-  pushUndo();
+  pushUndo("import");
   lastImportIssues = [];
   questions = markColumns.map((item, index) => createQuestion(index + 1, String(item.header).trim(), item.max));
   pupils = rows.slice(sheetState.layout.dataStartRow)
@@ -4057,6 +4508,7 @@ function applyExcelImport() {
   excelPreviewPanelEl.classList.add("hidden");
   rerenderAll();
   setSaveStatus(`Imported ${pupils.length} pupils and ${questions.length} questions from Excel.`);
+  showImportUndo(`Imported ${pupils.length} pupils and ${questions.length} questions. Restore the cohort that was open before this import.`);
 }
 
 function exportCsv() {
@@ -4123,7 +4575,7 @@ function importCsv(text) {
     return;
   }
 
-  pushUndo();
+  pushUndo("import");
   lastImportIssues = [];
   pupils = rows.slice(1).map((row, index) => ({
     id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${index}`,
@@ -4152,6 +4604,7 @@ function importCsv(text) {
   selectedPupilId = pupils[0]?.id;
   rerenderAll();
   setSaveStatus(`Imported ${pupils.length} pupils from CSV${lastImportIssues.length ? ` with ${lastImportIssues.length} issue(s)` : ""}.`);
+  showImportUndo(`Imported ${pupils.length} pupils from CSV. Restore the cohort that was open before this import.`);
 }
 
 function columnOptions(headers, selectedIndex = -1) {
@@ -4231,7 +4684,7 @@ function importCsvWithMapping() {
     return;
   }
 
-  pushUndo();
+  pushUndo("import");
   lastImportIssues = [];
   pupils = pendingCsvRows.slice(1).map((row, index) => ({
     id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${index}`,
@@ -4260,6 +4713,7 @@ function importCsvWithMapping() {
   csvMappingPanelEl.classList.add("hidden");
   rerenderAll();
   setSaveStatus(`Imported ${pupils.length} pupils using mapped columns${lastImportIssues.length ? ` with ${lastImportIssues.length} issue(s)` : ""}.`);
+  showImportUndo(`Imported ${pupils.length} pupils using mapped columns. Restore the cohort that was open before this import.`);
 }
 
 function importPastedMarks(text, startPupilIndex = 0, startQuestionIndex = 0, includesNames = null) {
@@ -4452,6 +4906,11 @@ dismissAutosaveButton.addEventListener("click", () => {
 });
 
 undoChangeButton.addEventListener("click", restoreUndo);
+undoImportButton.addEventListener("click", restoreUndo);
+
+document.querySelector(".export-menu")?.addEventListener("click", (event) => {
+  if (event.target.closest("button")) event.currentTarget.removeAttribute("open");
+});
 
 savedSlotsSelect.addEventListener("change", () => {
   if (savedSlotsSelect.value) saveNameInput.value = savedSlotsSelect.value;
@@ -4579,7 +5038,23 @@ setupGuideEl.addEventListener("click", (event) => {
     toggleFeedbackButton.textContent = "Hide";
     toggleFeedbackButton.setAttribute("aria-expanded", "true");
   }
-  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  let focusTarget = target;
+  if (step.dataset.guideQuestion !== undefined) {
+    const index = Number(step.dataset.guideQuestion);
+    const field = step.dataset.guideField;
+    const row = topicRowsEl.querySelector(`[data-question-row="${index}"]`);
+    focusTarget = field === "skills"
+      ? row?.querySelector(".skill-checklist") || row
+      : row?.querySelector(`[data-topic-field="${field === "maximum mark" ? "max" : field}"]`) || row;
+  } else if (step.dataset.guidePupil !== undefined) {
+    focusTarget = pupilRowsEl.querySelector(`[data-pupil-row="${step.dataset.guidePupil}"]`) || target;
+  }
+  document.querySelectorAll(".guide-attention").forEach((element) => element.classList.remove("guide-attention"));
+  focusTarget?.classList.add("guide-attention");
+  focusTarget?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+  if (typeof focusTarget?.focus === "function" && focusTarget.matches("input, select, textarea, button")) {
+    focusTarget.focus({ preventScroll: true });
+  }
 });
 
 excelSheetSelectEl.addEventListener("change", () => {
